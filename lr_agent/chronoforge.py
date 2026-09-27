@@ -377,14 +377,43 @@ class ChronoForge:
     ) -> list[list[dict[str, Any]]]:
         if not scenarios:
             raise ChronoForgeError("No future scenarios are available.")
-        schedule: list[list[dict[str, Any]]] = []
-        for trajectory in range(trajectories):
-            row: list[dict[str, Any]] = []
-            for generation in range(generations):
-                index = (trajectory + generation) % len(scenarios)
-                row.append(dict(scenarios[index]))
-            schedule.append(row)
-        return schedule
+
+        schedule: list[list[dict[str, Any] | None]] = [
+            [None for _ in range(generations)]
+            for _ in range(trajectories)
+        ]
+        used = [0 for _ in scenarios]
+        category_order = {
+            category: index
+            for index, category in enumerate(FUTURE_CATEGORIES)
+        }
+
+        # Weighted-fair scheduling is deterministic: reality calibration changes how often
+        # a future category appears, but high-weight categories cannot starve every other
+        # scenario forever because their priority falls after each assignment.
+        for generation in range(generations):
+            for trajectory in range(trajectories):
+                ranked = sorted(
+                    range(len(scenarios)),
+                    key=lambda index: (
+                        -(
+                            max(float(scenarios[index].get("weight", 0.0)), 1e-9)
+                            / (used[index] + 1)
+                        ),
+                        category_order.get(
+                            str(scenarios[index].get("category")),
+                            999,
+                        ),
+                    ),
+                )
+                selected = ranked[0]
+                schedule[trajectory][generation] = dict(scenarios[selected])
+                used[selected] += 1
+
+        return [
+            [item for item in row if item is not None]
+            for row in schedule
+        ]
 
     def _child_settings(
         self,
