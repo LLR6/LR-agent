@@ -146,6 +146,17 @@
     textarea:focus { border-color: rgba(88,216,255,.55); }
     .send { height: 58px; min-width: 86px; }
     .trace h3 { margin: 0 0 14px; font-size: 14px; color: var(--muted); font-weight: 600; }
+    .trace h3.section { margin-top: 22px; }
+    .plan-card, .review-card {
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      padding: 11px;
+      background: rgba(255,255,255,.025);
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .plan-card ol, .review-card ul { padding-left: 18px; margin: 8px 0 0; }
+    .plan-card li, .review-card li { margin: 6px 0; }
     .step {
       margin-bottom: 10px;
       border: 1px solid var(--line);
@@ -226,8 +237,12 @@
   </main>
 
   <section class="trace">
-    <h3>EXECUTION TRACE</h3>
+    <h3>PLAN</h3>
+    <div id="plan"><div class="meta">Coder / Research 模式会先生成可验证计划。</div></div>
+    <h3 class="section">EXECUTION TRACE</h3>
     <div id="steps"><div class="meta">还没有工具调用。</div></div>
+    <h3 class="section">REVIEW</h3>
+    <div id="review"><div class="meta">执行完成后进行结果审查。</div></div>
   </section>
 </div>
 
@@ -237,6 +252,8 @@
   const send = document.getElementById("send");
   const messages = document.getElementById("messages");
   const steps = document.getElementById("steps");
+  const planBox = document.getElementById("plan");
+  const reviewBox = document.getElementById("review");
   const mode = document.getElementById("mode");
 
   function esc(text) {
@@ -272,6 +289,34 @@
     `).join("");
   }
 
+  function renderPlan(plan) {
+    if (!plan) {
+      planBox.innerHTML = '<div class="meta">当前模式未启用规划。</div>';
+      return;
+    }
+    const items = (plan.steps || []).map(item =>
+      '<li><b>' + esc(item.action) + '</b><br><span>' + esc(item.success_condition || "") + '</span></li>'
+    ).join("");
+    planBox.innerHTML =
+      '<div class="plan-card"><b>' + esc(plan.goal) + '</b><ol>' + items + '</ol></div>';
+  }
+
+  function renderReview(review) {
+    if (!review) {
+      reviewBox.innerHTML = '<div class="meta">没有审查结果。</div>';
+      return;
+    }
+    const problems = (review.problems || []).map(x => '<li>' + esc(x) + '</li>').join("");
+    const next = (review.next_actions || []).map(x => '<li>' + esc(x) + '</li>').join("");
+    reviewBox.innerHTML =
+      '<div class="review-card"><b class="' + (review.passed ? 'ok' : 'bad') + '">' +
+      (review.passed ? 'PASS' : 'NEEDS WORK') + '</b><div style="margin-top:7px">' +
+      esc(review.summary || "") + '</div>' +
+      (problems ? '<div style="margin-top:8px">Problems<ul>' + problems + '</ul></div>' : '') +
+      (next ? '<div style="margin-top:8px">Next<ul>' + next + '</ul></div>' : '') +
+      '</div>';
+  }
+
   async function refreshSessions() {
     try {
       const r = await fetch("/api/sessions");
@@ -296,6 +341,8 @@
       messages.innerHTML = "";
       data.forEach(item => addMessage(item.role === "user" ? "user" : "assistant", item.content));
       steps.innerHTML = '<div class="meta">历史会话已加载；执行轨迹只显示当前新一轮。</div>';
+      planBox.innerHTML = '<div class="meta">历史消息已加载；计划不单独持久化显示。</div>';
+      reviewBox.innerHTML = '<div class="meta">发起下一轮任务后显示新的审查结果。</div>';
       input.focus();
     } catch (e) {
       steps.innerHTML = '<div class="bad">加载会话失败：' + esc(e.message) + '</div>';
@@ -322,6 +369,8 @@
     send.disabled = true;
     send.textContent = "执行中";
     steps.innerHTML = '<div class="meta">Agent 正在执行工具...</div>';
+    planBox.innerHTML = '<div class="meta">正在生成计划...</div>';
+    reviewBox.innerHTML = '<div class="meta">等待执行结果...</div>';
 
     try {
       const r = await fetch("/api/chat", {
@@ -337,7 +386,9 @@
       if (!r.ok) throw new Error(data.detail || "Request failed");
       sessionId = data.session_id;
       addMessage("assistant", data.answer);
+      renderPlan(data.plan);
       renderSteps(data.steps);
+      renderReview(data.review);
       refreshSessions();
     } catch (e) {
       addMessage("assistant", "执行失败： " + e.message);
@@ -360,6 +411,8 @@
     sessionId = null;
     messages.innerHTML = '<div class="empty" id="empty">新会话已开始。</div>';
     steps.innerHTML = '<div class="meta">还没有工具调用。</div>';
+    planBox.innerHTML = '<div class="meta">Coder / Research 模式会先生成可验证计划。</div>';
+    reviewBox.innerHTML = '<div class="meta">执行完成后进行结果审查。</div>';
   });
 
   health();
