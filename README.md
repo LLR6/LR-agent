@@ -2,19 +2,23 @@
 
 一个**真实可运行**的本地 AI Agent。它不是静态聊天页面：模型可以在受控工具权限下读取/修改工作区文件、执行白名单命令、访问公开 HTTP(S) 资源，并通过 SQLite 记住会话。
 
-> 当前版本：`0.1.0`。定位是“先把 Agent 执行闭环跑通”，后续再扩展 GitHub 原生工具、多 Agent、RAG、任务队列和桌面端。
+> 当前版本：`0.2.0`。已经从“能调用工具”升级到 **Planner → Executor → Reviewer + 持久化 Run + GitHub 原生工具 + 中断恢复**。
 
 ## 已实现
 
 - OpenAI-compatible 模型接口，可接云端兼容接口或本地 Ollama 等服务
+- Planner / Executor / Reviewer：Coder、Research 模式会先生成可验证计划，执行后再由 Reviewer 检查是否真的完成
 - Tool Calling 自主循环：模型 -> 工具 -> 工具结果 -> 模型，最多执行 `LR_AGENT_MAX_STEPS` 步
+- Reviewer 发现未完成项时可自动返工，次数由 `LR_AGENT_MAX_REVIEW_RETRIES` 控制
 - 文件工具：列目录、全文搜索、读文件、写文件、精确替换
 - 命令工具：**不经过 shell**，只允许配置白名单中的可执行程序
 - HTTP 工具：GET 公网资源；默认拦截 localhost / 私网 / link-local / reserved 地址
-- SQLite 会话记忆
+- SQLite 会话记忆 + 每次 Run 的计划、工具调用证据、最终状态和 Review 持久化
+- 中断恢复：Web UI 可点“继续此任务”，CLI 可用 `lr-agent resume RUN_ID`
+- GitHub 原生工具：仓库元数据、目录、文件、Actions；显式开启后可建 Issue、分支、写文件、开 PR
 - General / Coder / Research 三种工作模式
 - FastAPI 后端 + 本地 Web 控制台
-- CLI：`serve` / `chat` / `doctor`
+- CLI：`serve` / `chat` / `runs` / `resume` / `doctor`
 - Docker / docker compose
 - pytest 单元测试 + GitHub Actions CI
 - 对 API Key、危险 Git 命令、目录穿越做基础防护
@@ -98,6 +102,18 @@ lr-agent chat --mode general
 
 输入 `/exit` 退出。
 
+查看最近持久化任务：
+
+```bash
+lr-agent runs
+```
+
+恢复某一轮任务：
+
+```bash
+lr-agent resume <run_id>
+```
+
 ## 5. 接本地 Ollama
 
 如果你的 Ollama 提供 OpenAI-compatible `/v1` 接口，可以这样配置：
@@ -134,7 +150,15 @@ ToolRegistry
   ├─ write_file
   ├─ replace_in_file
   ├─ run_command
-  └─ http_get
+  ├─ http_get
+  ├─ github_get_repo
+  ├─ github_list_contents
+  ├─ github_read_file
+  ├─ github_list_workflow_runs
+  ├─ github_create_issue *
+  ├─ github_create_branch *
+  ├─ github_put_file *
+  └─ github_create_pull_request *
   ↓
 tool result
   ↓
@@ -143,7 +167,7 @@ LLM 再判断
 继续调用工具 / 返回最终答案
 ```
 
-Web UI 右侧会显示真实的工具调用、参数、成功/失败和结果预览。
+Web UI 右侧会显示 **Run ID、Plan、真实工具调用、参数、成功/失败、Reviewer 结论**。带 `*` 的 GitHub 写操作默认关闭。
 
 ## 7. 工作区
 
@@ -191,7 +215,26 @@ LR_AGENT_ALLOW_DESTRUCTIVE=true
 
 这并不等于完整安全沙箱。对于不可信仓库，建议使用 Docker 或临时虚拟机。
 
-## 9. Docker
+## 9. GitHub 原生工具
+
+读取公开仓库不要求 Token。访问私有仓库或执行写操作时配置：
+
+```env
+LR_AGENT_GITHUB_TOKEN=你的_GitHub_Token
+LR_AGENT_ALLOW_GITHUB_WRITE=false
+```
+
+默认 `false` 时，即使模型请求建 Issue / 分支 / PR / 改远程文件，也会被工具层拒绝。
+
+确认你确实希望 Agent 修改 GitHub 后，再显式改为：
+
+```env
+LR_AGENT_ALLOW_GITHUB_WRITE=true
+```
+
+Token 不会作为普通工具参数传给模型。
+
+## 10. Docker
 
 先创建 `.env`，然后：
 
@@ -214,7 +257,7 @@ Docker 会把：
 
 持久化到宿主机。
 
-## 10. 测试
+## 11. 测试
 
 ```bash
 pytest
@@ -222,11 +265,12 @@ pytest
 
 当前测试覆盖：
 
-- SQLite 会话读写
+- SQLite 会话读写与 Run/Step 持久化
 - 文件创建/读取/替换
 - workspace 目录穿越拦截
 - 非白名单命令拦截
-- Agent -> tool call -> tool result -> final answer 完整闭环
+- Planner -> Executor -> Tool -> Reviewer 完整闭环
+- GitHub 写操作默认关闭
 
 GitHub Actions 会在 Python 3.11 和 3.12 上运行同一套测试。
 
@@ -238,24 +282,28 @@ GitHub Actions 会在 Python 3.11 和 3.12 上运行同一套测试。
 | `LR_AGENT_API_KEY` | 空 | 模型 API Key |
 | `LR_AGENT_MODEL` | `gpt-5.6` | 模型名 |
 | `LR_AGENT_MAX_STEPS` | `12` | 单轮最大工具循环 |
+| `LR_AGENT_ENABLE_PLANNING` | `true` | Coder/Research 是否先规划 |
+| `LR_AGENT_ENABLE_REVIEW` | `true` | 是否执行结果审查 |
+| `LR_AGENT_MAX_REVIEW_RETRIES` | `1` | Reviewer 不通过后的最大返工次数 |
 | `LR_AGENT_WORKSPACE` | `./workspace` | Agent 工作目录 |
 | `LR_AGENT_DATABASE` | `./data/lr_agent.db` | SQLite 数据库 |
 | `LR_AGENT_ALLOWED_COMMANDS` | 见上文 | 命令白名单 |
 | `LR_AGENT_ALLOW_DESTRUCTIVE` | `false` | 是否允许已标记危险命令 |
 | `LR_AGENT_ALLOW_PRIVATE_NETWORK` | `false` | HTTP 工具是否允许访问私网 |
+| `LR_AGENT_GITHUB_TOKEN` | 空 | GitHub API Token；私有仓库/写操作需要 |
+| `LR_AGENT_GITHUB_API_BASE` | `https://api.github.com` | GitHub API 地址 |
+| `LR_AGENT_ALLOW_GITHUB_WRITE` | `false` | 是否允许 GitHub 写操作 |
 
 ## 下一阶段
 
 后续可以继续做：
 
-1. GitHub 原生 API 工具：仓库、Issue、PR、Actions
-2. Planner / Coder / Reviewer 多 Agent
-3. 任务队列与可恢复的长任务
-4. 文件向量检索与长期知识库
-5. Diff 审批、命令审批和细粒度权限
-6. 浏览器自动化
-7. Windows 桌面客户端与托盘常驻
-8. 考研 / 网安专用 Agent profile
+1. 真正的后台任务队列与 WebSocket 实时日志
+2. 文件向量检索与长期知识库（RAG）
+3. Diff 审批、命令审批和更细粒度权限
+4. 浏览器自动化
+5. Windows 桌面客户端与托盘常驻
+6. 考研 / 网安专用 Agent profile
 
 ---
 
