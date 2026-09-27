@@ -1,5 +1,6 @@
 import asyncio
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -128,3 +129,74 @@ async def test_task_approval_roundtrip(tmp_path: Path) -> None:
     item = store.get_approval(approval_id)
     assert item is not None
     assert item["status"] == "approved"
+
+
+class BlockingAgent:
+    def __init__(self) -> None:
+        self.settings = SimpleNamespace(
+            max_concurrent_tasks=1,
+            approval_timeout_s=1.0,
+        )
+        self.gate = asyncio.Event()
+        self.started: list[str] = []
+
+    async def run(
+        self,
+        message,
+        *,
+        session_id=None,
+        mode="general",
+        event_sink=None,
+        approval_handler=None,
+    ):
+        self.started.append(message)
+        if message == "first":
+            await self.gate.wait()
+        return ChatResponse(
+            session_id=session_id or f"session-{message}",
+            run_id=f"run-{message}",
+            status="completed",
+            answer=message,
+            steps=[],
+            plan=None,
+            review=None,
+        )
+
+
+@pytest.mark.asyncio
+async def test_bounded_queue_keeps_second_task_queued_and_cancellable(tmp_path: Path) -> None:
+    store = MemoryStore(tmp_path / "memory.db")
+    agent = BlockingAgent()
+    manager = TaskManager(agent, store)
+
+    first = manager.submit(ChatRequest(message="first", mode="coder"))
+    second = manager.submit(ChatRequest(message="second", mode="coder"))
+
+    for _ in range(50):
+        first_item = manager.get(first)
+        second_item = manager.get(second)
+        if (
+            first_item is not None
+            and first_item["status"] == "running"
+            and second_item is not None
+            and second_item["status"] == "queued"
+        ):
+            break
+        await asyncio.sleep(0.01)
+    else:
+        pytest.fail("expected first task running and second task queued")
+
+    assert await manager.cancel(second) is True
+    second_item = manager.get(second)
+    assert second_item is not None
+    assert second_item["status"] == "cancelled"
+    assert agent.started == ["first"]
+
+    agent.gate.set()
+    for _ in range(50):
+        first_item = manager.get(first)
+        if first_item is not None and first_item["status"] == "completed":
+            break
+        await asyncio.sleep(0.01)
+    else:
+        pytest.fail("first task did not complete after releasing gate")
