@@ -68,6 +68,21 @@ class TaskSummary(BaseModel):
     updated_at: str
 
 
+class UniverseStartRequest(BaseModel):
+    task: str = Field(min_length=1, max_length=100_000)
+    candidates: int = Field(default=3, ge=2, le=4)
+    evolve: bool = False
+
+
+class UniverseStartResponse(BaseModel):
+    tournament_id: str
+    status: str
+
+
+class UniversePromoteRequest(BaseModel):
+    candidate_id: str | None = None
+
+
 class SessionSummary(BaseModel):
     id: str
     title: str
