@@ -211,6 +211,8 @@
   <aside>
     <div class="brand"><div class="orb"></div> LR-Agent</div>
     <button class="new primary" id="newSession">＋ 新会话</button>
+    <button class="new" id="rebuildKnowledge">↻ 索引工作区知识库</button>
+    <div class="meta" id="knowledgeStats" style="margin:0 4px 12px">knowledge: checking...</div>
     <div class="side-title">SESSIONS</div>
     <div id="sessions"></div>
     <div class="side-title">RECENT RUNS</div>
@@ -330,6 +332,40 @@
       (problems ? '<div style="margin-top:8px">Problems<ul>' + problems + '</ul></div>' : '') +
       (next ? '<div style="margin-top:8px">Next<ul>' + next + '</ul></div>' : '') +
       '</div>';
+  }
+
+  async function refreshKnowledgeStats() {
+    const el = document.getElementById("knowledgeStats");
+    try {
+      const r = await fetch("/api/knowledge/stats");
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || "stats failed");
+      el.textContent = "knowledge: " + data.files + " files / " + data.chunks + " chunks";
+    } catch (_) {
+      el.textContent = "knowledge: unavailable";
+    }
+  }
+
+  async function rebuildKnowledge() {
+    const button = document.getElementById("rebuildKnowledge");
+    if (button.disabled) return;
+    button.disabled = true;
+    button.textContent = "正在建立索引...";
+    try {
+      const r = await fetch("/api/knowledge/rebuild", {method: "POST"});
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || "rebuild failed");
+      document.getElementById("knowledgeStats").textContent =
+        "knowledge: " + data.indexed_files + " files / " + data.indexed_chunks + " chunks";
+      button.textContent = "✓ 索引完成";
+      setTimeout(() => { button.textContent = "↻ 索引工作区知识库"; }, 1600);
+    } catch (e) {
+      document.getElementById("knowledgeStats").textContent =
+        "knowledge error: " + e.message;
+      button.textContent = "↻ 重试索引";
+    } finally {
+      button.disabled = false;
+    }
   }
 
   async function refreshRuns() {
@@ -619,6 +655,7 @@
       execute();
     }
   });
+  document.getElementById("rebuildKnowledge").addEventListener("click", rebuildKnowledge);
   document.getElementById("newSession").addEventListener("click", () => {
     sessionId = null;
     messages.innerHTML = '<div class="empty" id="empty">新会话已开始。</div>';
@@ -631,6 +668,7 @@
   health();
   refreshSessions();
   refreshRuns();
+  refreshKnowledgeStats();
   input.focus();
 </script>
 </body>
