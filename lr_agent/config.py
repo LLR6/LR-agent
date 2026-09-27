@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     enable_review: bool = True
     max_review_retries: int = 1
     request_timeout_s: float = 120.0
+    model_retries: int = 2
     command_timeout_s: float = 60.0
 
     workspace: Path = Path("./workspace")
