@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from lr_agent.config import Settings
+from lr_agent.genome_store import GenomeStore
 from lr_agent.models import AgentStep, ChatResponse, ReviewReport
 from lr_agent.tools import ToolRegistry
 from lr_agent.universes import UniverseLab
@@ -214,3 +215,55 @@ async def test_proof_carrying_promotion_rolls_back_when_real_verification_fails(
     assert promoted["rolled_back"] is True
     assert promoted["verification"]["passed"] is False
     assert source.read_text(encoding="utf-8") == "value = 'original'\n"
+
+
+@pytest.mark.asyncio
+async def test_invariant_dna_can_veto_and_rollback_forge_promotion(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    source = workspace / "app.py"
+    source.write_text("value = 'original'\n", encoding="utf-8")
+    (workspace / "test_app.py").write_text(
+        "import app\n\ndef test_value():\n    assert app.value == 'surgical-fix'\n",
+        encoding="utf-8",
+    )
+
+    settings = Settings(
+        workspace=workspace,
+        database=tmp_path / "memory.db",
+        knowledge_database=tmp_path / "knowledge.db",
+        genome_database=tmp_path / "genome.db",
+        universe_root=tmp_path / "universes",
+        universe_candidates=2,
+    )
+    settings.ensure_dirs()
+
+    genome = GenomeStore(settings.genome_database)
+    genome.create_invariant(
+        name="legacy value remains stable",
+        description="For this test project the public value must remain original.",
+        commands=[
+            {
+                "argv": [
+                    "python",
+                    "-c",
+                    "import app; assert app.value == 'original'",
+                ],
+                "cwd": ".",
+            }
+        ],
+    )
+
+    lab = UniverseLab(settings, agent_runner=fake_runner)
+    tournament = await lab.run("fix app", candidates=2, evolve=False)
+    promoted = await lab.promote(tournament["id"])
+
+    assert promoted["ok"] is False
+    assert promoted["rolled_back"] is True
+    assert promoted["invariant_verification"]["passed"] is False
+    assert source.read_text(encoding="utf-8") == "value = 'original'\n"
+
+    invariant = genome.list_invariants(status="active")[0]
+    assert invariant["last_status"] == "failed"
