@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     knowledge_database: Path = Path("./data/knowledge.db")
     knowledge_max_files: int = 3000
     knowledge_max_file_bytes: int = 1_000_000
+    auto_context: bool = True
+    auto_context_results: int = 6
 
     allowed_commands: str = "python,python3,pytest,git,gh,pip,uv,pwd,ls,dir,find,where"
     allow_destructive: bool = False
