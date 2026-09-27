@@ -148,6 +148,17 @@ LR-Agent 不是把 Planner / Reviewer / RAG 再组合一遍，而是在实验几
 
 完整研究边界、相关工作、可证伪实验和 benchmark 计划都公开在 [`docs/research/`](./docs/research/README.md)。
 
+## 参与 / Help Wanted
+
+如果你想直接参与，下面这些 Issue 已经拆成可执行任务：
+
+- [#1 Chrono Tournament](https://github.com/LLR6/LR-agent/issues/1) — 让多个今天都正确的 Patch 进入同一套 Future Matrix
+- [#2 Retrospective Benchmark](https://github.com/LLR6/LR-agent/issues/2) — 用真实后续仓库历史验证 ChronoForge
+- [#3 30–60 秒真实 Demo](https://github.com/LLR6/LR-agent/issues/3) — 录制 Forge → ChronoForge → Life Report
+- [#5 Counterexample Thread](https://github.com/LLR6/LR-agent/issues/5) — 专门收集打脸案例和误导性结果
+
+**反例比“看起来很牛”更有价值。** 如果你找到一个能让 ChronoForge、Causal Genome 或 Invariant DNA 得出错误结论的最小案例，欢迎直接提 Issue。
+
 ## Research / 研究入口
 
 - **[Research Program](./docs/research/README.md)** — 总体研究问题
