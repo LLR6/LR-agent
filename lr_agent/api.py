@@ -38,7 +38,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     task_manager = TaskManager(agent, memory)
     universe_lab = UniverseLab(settings)
 
-    app = FastAPI(title="LR-Agent", version="0.8.0")
+    app = FastAPI(title="LR-Agent", version="0.9.0")
     web_index = Path(__file__).with_name("web") / "index.html"
 
     def token_valid(candidate: str | None) -> bool:
