@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.7.0 - 2026-09-27
+
+### Added
+
+- Run-scoped workspace snapshots for direct local file mutation tools.
+- Original file bytes, mode and SHA-256 plus final kind/hash persistence.
+- Conflict-aware rollback journal that refuses to overwrite workspace changes made after a run.
+- Web UI rollback control for historical runs.
+- REST endpoints to inspect run snapshots and request rollback.
+- CLI `rollback <run_id>` command with confirmation and conflict reporting.
+- Workspace mutation lock so direct file mutations and rollback do not race each other.
+
+### Safety
+
+- Snapshot creation happens before a direct file mutation and can block a mutation
+  when the existing file exceeds the configured snapshot size limit.
+- Rollback is all-or-nothing with respect to detected final-state conflicts: if any
+  path differs from the run's recorded final state, no rollback path is changed.
+- Directory deletion remains limited to empty directories created through tracked
+  direct file operations.
+- Rollback does not claim to undo `run_command`, build-script, package-manager,
+  Git hook, external-process or remote GitHub side effects.
+
+### Changed
+
+- Package and API version updated to 0.7.0.
+
 ## 0.6.0 - 2026-09-27
 
 ### Added
