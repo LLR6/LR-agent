@@ -74,6 +74,22 @@ class MemoryStore:
                     ON runs(session_id, created_at);
                 CREATE INDEX IF NOT EXISTS idx_run_steps_run_id
                     ON run_steps(run_id, step_index);
+
+                CREATE TABLE IF NOT EXISTS tasks (
+                    id TEXT PRIMARY KEY,
+                    message TEXT NOT NULL,
+                    mode TEXT NOT NULL,
+                    session_id TEXT,
+                    run_id TEXT,
+                    status TEXT NOT NULL,
+                    error TEXT,
+                    result_json TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_tasks_created_at
+                    ON tasks(created_at DESC);
                 """
             )
 
@@ -267,6 +283,112 @@ class MemoryStore:
             for step in steps
         ]
         return result
+
+
+    def create_task_record(
+        self,
+        *,
+        message: str,
+        mode: str,
+        session_id: str | None,
+    ) -> str:
+        task_id = uuid.uuid4().hex
+        now = _now()
+        with self._lock, self._conn:
+            self._conn.execute(
+                """
+                INSERT INTO tasks(
+                    id, message, mode, session_id, run_id, status,
+                    error, result_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, NULL, 'queued', NULL, NULL, ?, ?)
+                """,
+                (task_id, message, mode, session_id, now, now),
+            )
+        return task_id
+
+    def update_task_record(
+        self,
+        task_id: str,
+        *,
+        status: str | None = None,
+        session_id: str | None = None,
+        run_id: str | None = None,
+        error: str | None = None,
+        result: dict[str, Any] | None = None,
+    ) -> None:
+        updates: list[str] = []
+        values: list[Any] = []
+        if status is not None:
+            updates.append("status = ?")
+            values.append(status)
+        if session_id is not None:
+            updates.append("session_id = ?")
+            values.append(session_id)
+        if run_id is not None:
+            updates.append("run_id = ?")
+            values.append(run_id)
+        if error is not None:
+            updates.append("error = ?")
+            values.append(error)
+        if result is not None:
+            updates.append("result_json = ?")
+            values.append(json.dumps(result, ensure_ascii=False))
+        updates.append("updated_at = ?")
+        values.append(_now())
+        values.append(task_id)
+
+        with self._lock, self._conn:
+            self._conn.execute(
+                f"UPDATE tasks SET {', '.join(updates)} WHERE id = ?",
+                values,
+            )
+
+    def get_task_record(self, task_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                """
+                SELECT id, message, mode, session_id, run_id, status,
+                       error, result_json, created_at, updated_at
+                FROM tasks
+                WHERE id = ?
+                """,
+                (task_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        result = dict(row)
+        raw = result.pop("result_json")
+        result["result"] = json.loads(raw) if raw else None
+        return result
+
+    def list_task_records(self, limit: int = 50) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                """
+                SELECT id, message, mode, session_id, run_id, status,
+                       error, created_at, updated_at
+                FROM tasks
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def mark_incomplete_tasks_interrupted(self) -> int:
+        now = _now()
+        with self._lock, self._conn:
+            cursor = self._conn.execute(
+                """
+                UPDATE tasks
+                SET status = 'interrupted',
+                    error = COALESCE(error, 'Process restarted before task completed.'),
+                    updated_at = ?
+                WHERE status IN ('queued', 'running')
+                """,
+                (now,),
+            )
+        return int(cursor.rowcount)
 
     def list_sessions(self, limit: int = 50) -> list[dict[str, str]]:
         with self._lock:
