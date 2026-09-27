@@ -2,7 +2,7 @@
 
 一个**真实可运行**的本地 AI Agent。它不是静态聊天页面：模型可以在受控工具权限下读取/修改工作区文件、执行白名单命令、访问公开 HTTP(S) 资源，并通过 SQLite 记住会话。
 
-> 当前版本：`0.5.0`。在 0.4 的审批体系基础上，继续补上了 **有界后台并发、自动项目上下文检索、Web/API 鉴权、远程绑定保护和更完整的 CLI 管理能力**。
+> 当前版本：`0.6.0`。继续把 Coding Agent 的执行闭环做实：加入了 **命令 stdout/stderr 实时流、Web 端任务取消、项目技术栈/验证命令识别、更完整的安全文件操作，以及 Python + Web UI 双重 CI 语法检查**。
 
 ## 已实现
 
@@ -16,9 +16,11 @@
 - WebSocket 实时执行流：Planner、Run、Tool Step、Reviewer、完成状态会实时推送给 Web UI
 - 项目知识索引：可把 workspace 文本文件分块写入 SQLite，优先使用 FTS5/BM25 检索；Coder / Research 默认会自动检索相关上下文再规划和执行
 - 检索安全：自动召回的项目内容会明确标记为 **UNTRUSTED PROJECT DATA**，不会被当作系统指令
-- 文件工具：列目录、全文搜索、读文件、写文件、精确替换；写入/替换会返回统一 Diff
+- 文件工具：列目录、全文搜索、按行读取、写文件、精确替换、单文件删除/移动、创建目录；写入/替换会返回统一 Diff
+- 项目识别：`project_inspect` 会识别 Python / Node / Rust / Go / Maven / Gradle / CMake / Git，并返回建议的测试/构建检查命令
 - Git 只读工具：git status / git diff
-- 命令工具：**不经过 shell**，只允许配置白名单中的可执行程序；使用 asyncio 子进程，任务取消/超时时会终止当前子进程
+- 命令工具：**不经过 shell**，只允许配置白名单中的可执行程序；使用 asyncio 子进程，stdout/stderr 会通过 WebSocket 实时推送，任务取消/超时时会终止当前子进程
+- Web UI 可以直接取消正在运行或仍在排队的后台任务，并实时查看命令输出
 - HTTP 工具：GET 公网资源；默认拦截 localhost / 私网 / link-local / reserved 地址
 - SQLite 会话记忆 + 每次 Run 的计划、工具调用证据、最终状态和 Review 持久化
 - 中断恢复：Web UI 可点“继续此任务”，CLI 可用 `lr-agent resume RUN_ID`
@@ -165,7 +167,11 @@ ToolRegistry
   ├─ search_files
   ├─ read_file
   ├─ write_file
+  ├─ delete_file
+  ├─ move_file
+  ├─ make_directory
   ├─ replace_in_file
+  ├─ project_inspect
   ├─ git_status
   ├─ git_diff
   ├─ run_command
@@ -189,7 +195,7 @@ LLM 再判断
 继续调用工具 / 返回最终答案
 ```
 
-Web UI 右侧会显示 **Task / Run ID、Plan、实时工具调用、参数、Diff/输出证据、Reviewer 结论**。任务通过 WebSocket 实时刷新。带 `*` 的 GitHub 写操作默认关闭。
+Web UI 右侧会显示 **Task / Run ID、Plan、实时工具调用、LIVE OUTPUT、参数、Diff/输出证据、Reviewer 结论**。长命令运行时 stdout/stderr 会边执行边显示，不必等命令结束。带 `*` 的 GitHub 写操作默认关闭。
 
 ## 7. 工作区
 
@@ -212,7 +218,7 @@ LR_AGENT_WORKSPACE=D:/Projects/my-project
 默认：
 
 ```env
-LR_AGENT_ALLOWED_COMMANDS=python,python3,pytest,git,gh,pip,uv,pwd,ls,dir,find,where
+LR_AGENT_ALLOWED_COMMANDS=python,python3,pytest,git,gh,pip,uv,pwd,ls,dir,find,where,node,npm,npx,pnpm,yarn,java,javac,mvn,gradle,gradlew,gradlew.bat,cargo,go,cmake,ctest
 ```
 
 `run_command` 直接用 argv 调用程序，不使用 `shell=True`。
@@ -460,13 +466,15 @@ pytest
 - WebSocket 事件源对应的任务事件历史
 - 项目知识索引、FTS/LIKE 搜索与依赖目录排除
 - 文件统一 Diff 与 git status / diff
-- 子进程任务取消
+- 子进程任务取消与实时 stdout/stderr 事件
+- 安全文件删除/移动/建目录、按行读取
+- 项目技术栈与建议验证命令识别
 - write / command / GitHub 写操作审批生命周期与拒绝保护
 - 后台并发上限、queued 任务取消
 - 自动项目上下文检索及“不可信上下文”标记
 - REST Bearer Token 与 WebSocket Token 鉴权
 
-GitHub Actions 会在 Python 3.11 和 3.12 上运行同一套测试。
+GitHub Actions 会在 Python 3.11 和 3.12 上运行同一套测试，并额外执行 `compileall` 与 Web UI JavaScript `node --check`，避免只测 Python 却把前端语法错误带进主分支。
 
 ## 配置项
 
@@ -504,9 +512,9 @@ GitHub Actions 会在 Python 3.11 和 3.12 上运行同一套测试。
 
 1. embeddings + FTS5 的混合 RAG
 2. 多工作区与项目配置文件
-3. 可配置的审批策略（按命令、路径、仓库细分）
-4. 浏览器自动化
-5. Windows 桌面客户端与托盘常驻
+3. Run 级变更快照与一键回滚
+4. 可配置的审批策略（按命令、路径、仓库细分）
+5. 浏览器自动化 / Windows 桌面客户端
 6. 考研 / 网安专用 Agent profile
 
 ---
