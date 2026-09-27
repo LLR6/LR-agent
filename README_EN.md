@@ -1,5 +1,9 @@
 # LR-Agent
 
+<p align="center">
+  <a href="https://codespaces.new/LLR6/LR-agent?quickstart=1"><img alt="Open in GitHub Codespaces" src="https://github.com/codespaces/badge.svg"></a>
+</p>
+
 <p align="center"><img src="./docs/media/lr-agent-social-preview.svg" alt="LR-Agent — Code that survives tomorrow" width="100%"></p>
 
 <p align="center"><img src="./docs/media/chronoforge-showcase.gif" alt="Deterministic ChronoForge showcase — not a benchmark" width="100%"></p>
