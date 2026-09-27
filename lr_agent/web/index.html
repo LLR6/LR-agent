@@ -154,7 +154,7 @@
     .send { height: 58px; min-width: 86px; }
     .trace h3 { margin: 0 0 14px; font-size: 14px; color: var(--muted); font-weight: 600; }
     .trace h3.section { margin-top: 22px; }
-    .plan-card, .review-card {
+    .plan-card, .review-card, .approval-card {
       border: 1px solid var(--line);
       border-radius: 11px;
       padding: 11px;
@@ -163,6 +163,19 @@
       color: var(--muted);
     }
     .plan-card ol, .review-card ul { padding-left: 18px; margin: 8px 0 0; }
+    .approval-preview {
+      margin-top: 9px;
+      padding: 9px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(0,0,0,.18);
+      white-space: pre-wrap;
+      max-height: 240px;
+      overflow: auto;
+      overflow-wrap: anywhere;
+    }
+    .approval-actions { display: flex; gap: 8px; margin-top: 10px; }
+    .approval-actions button { flex: 1; }
     .plan-card li, .review-card li { margin: 6px 0; }
     .step {
       margin-bottom: 10px;
@@ -251,6 +264,8 @@
   <section class="trace">
     <h3>RUN</h3>
     <div id="runmeta"><div class="meta">尚未开始任务。</div></div>
+    <h3 class="section">APPROVAL</h3>
+    <div id="approval"><div class="meta">没有等待审批的操作。</div></div>
     <h3 class="section">PLAN</h3>
     <div id="plan"><div class="meta">Coder / Research 模式会先生成可验证计划。</div></div>
     <h3 class="section">EXECUTION TRACE</h3>
@@ -269,6 +284,7 @@
   const messages = document.getElementById("messages");
   const steps = document.getElementById("steps");
   const runMeta = document.getElementById("runmeta");
+  const approvalBox = document.getElementById("approval");
   const planBox = document.getElementById("plan");
   const reviewBox = document.getElementById("review");
   const mode = document.getElementById("mode");
@@ -304,6 +320,51 @@
         <div class="preview" style="margin-top:7px">${esc(s.preview)}</div>
       </div>
     `).join("");
+  }
+
+  function renderApproval(taskId, approval) {
+    if (!approval) {
+      approvalBox.innerHTML = '<div class="meta">没有等待审批的操作。</div>';
+      return;
+    }
+    approvalBox.innerHTML =
+      '<div class="approval-card">' +
+      '<b class="bad">WAITING · ' + esc(approval.tool) + '</b>' +
+      '<div class="approval-preview">' + esc(approval.preview || "") + '</div>' +
+      '<div class="approval-actions">' +
+      '<button id="denyApproval">拒绝</button>' +
+      '<button class="primary" id="approveApproval">批准执行</button>' +
+      '</div></div>';
+
+    const decide = async approved => {
+      const approve = document.getElementById("approveApproval");
+      const deny = document.getElementById("denyApproval");
+      if (approve) approve.disabled = true;
+      if (deny) deny.disabled = true;
+      try {
+        const r = await fetch(
+          "/api/tasks/" + encodeURIComponent(taskId) +
+          "/approvals/" + encodeURIComponent(approval.id),
+          {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({approved})
+          }
+        );
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.detail || "Approval failed");
+        approvalBox.innerHTML =
+          '<div class="approval-card"><b class="' + (approved ? 'ok' : 'bad') + '">' +
+          (approved ? 'APPROVED' : 'DENIED') +
+          '</b><div style="margin-top:7px">' + esc(approval.tool) + '</div></div>';
+      } catch (e) {
+        approvalBox.innerHTML =
+          '<div class="approval-card bad">审批失败：' + esc(e.message) + '</div>';
+      }
+    };
+
+    document.getElementById("approveApproval").addEventListener("click", () => decide(true));
+    document.getElementById("denyApproval").addEventListener("click", () => decide(false));
   }
 
   function renderPlan(plan) {
@@ -411,6 +472,7 @@
     steps.innerHTML = '<div class="meta">等待恢复任务的实时工具事件...</div>';
     runMeta.innerHTML = '<div class="meta">正在提交恢复任务...</div>';
     reviewBox.innerHTML = '<div class="meta">等待 Reviewer...</div>';
+    approvalBox.innerHTML = '<div class="meta">没有等待审批的操作。</div>';
     try {
       const r = await fetch("/api/runs/" + encodeURIComponent(id) + "/resume-task", {
         method: "POST"
@@ -462,6 +524,7 @@
       runMeta.innerHTML = '<div class="meta">发起下一轮任务后显示新的 run id。</div>';
       planBox.innerHTML = '<div class="meta">历史消息已加载；计划不单独持久化显示。</div>';
       reviewBox.innerHTML = '<div class="meta">发起下一轮任务后显示新的审查结果。</div>';
+      approvalBox.innerHTML = '<div class="meta">没有等待审批的操作。</div>';
       input.focus();
     } catch (e) {
       steps.innerHTML = '<div class="bad">加载会话失败：' + esc(e.message) + '</div>';
@@ -487,6 +550,20 @@
       runMeta.innerHTML =
         '<div class="plan-card"><b>' + esc(event.status || "running") +
         '</b><div style="margin-top:6px">' + esc(event.task_id || "") + '</div></div>';
+      return;
+    }
+
+    if (event.type === "approval_required") {
+      renderApproval(event.task_id, event.approval);
+      return;
+    }
+
+    if (event.type === "approval_resolved") {
+      approvalBox.innerHTML =
+        '<div class="approval-card"><b class="' +
+        (event.status === "approved" ? 'ok' : 'bad') + '">' +
+        esc((event.status || "resolved").toUpperCase()) +
+        '</b><div style="margin-top:7px">' + esc(event.approval_id || "") + '</div></div>';
       return;
     }
 
@@ -615,6 +692,7 @@
     runMeta.innerHTML = '<div class="meta">正在提交后台任务...</div>';
     planBox.innerHTML = '<div class="meta">等待 Planner...</div>';
     reviewBox.innerHTML = '<div class="meta">等待 Reviewer...</div>';
+    approvalBox.innerHTML = '<div class="meta">没有等待审批的操作。</div>';
 
     try {
       const r = await fetch("/api/tasks", {
@@ -663,6 +741,7 @@
     runMeta.innerHTML = '<div class="meta">尚未开始任务。</div>';
     planBox.innerHTML = '<div class="meta">Coder / Research 模式会先生成可验证计划。</div>';
     reviewBox.innerHTML = '<div class="meta">执行完成后进行结果审查。</div>';
+    approvalBox.innerHTML = '<div class="meta">没有等待审批的操作。</div>';
   });
 
   health();
