@@ -191,7 +191,7 @@ class Agent:
                     result = await self.tools.execute(name, arguments)
 
                 serialized = json.dumps(result, ensure_ascii=False)
-                preview = serialized[:800]
+                preview = serialized[:4000]
                 step = AgentStep(
                     index=len(steps) + 1,
                     tool=name or "(missing tool name)",
