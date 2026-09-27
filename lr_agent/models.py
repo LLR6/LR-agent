@@ -39,6 +39,8 @@ class AgentStep(BaseModel):
 
 class ChatResponse(BaseModel):
     session_id: str
+    run_id: str
+    status: str
     answer: str
     steps: list[AgentStep]
     plan: AgentPlan | None = None
