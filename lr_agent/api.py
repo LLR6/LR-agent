@@ -18,9 +18,13 @@ from .models import (
     ChatResponse,
     SessionSummary,
     TaskStartResponse,
+    UniversePromoteRequest,
+    UniverseStartRequest,
+    UniverseStartResponse,
 )
 from .task_queue import TaskManager
 from .tools import ToolRegistry
+from .universes import UniverseError, UniverseLab
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -32,6 +36,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     tools = ToolRegistry(settings)
     agent = Agent(settings, llm, memory, tools)
     task_manager = TaskManager(agent, memory)
+    universe_lab = UniverseLab(settings)
 
     app = FastAPI(title="LR-Agent", version="0.8.0")
     web_index = Path(__file__).with_name("web") / "index.html"
@@ -170,6 +175,47 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=400, detail="q cannot be empty")
         safe_limit = min(max(limit, 1), 50)
         return await tools.search_knowledge(q, safe_limit)
+
+    @app.post("/api/universes", response_model=UniverseStartResponse)
+    async def start_universe_tournament(
+        request: UniverseStartRequest,
+    ) -> UniverseStartResponse:
+        item = universe_lab.start(
+            request.task,
+            candidates=request.candidates,
+            evolve=request.evolve,
+        )
+        return UniverseStartResponse(
+            tournament_id=str(item["id"]),
+            status=str(item["status"]),
+        )
+
+    @app.get("/api/universes")
+    async def universe_tournaments(limit: int = 30) -> list[dict[str, object]]:
+        return universe_lab.list(min(max(limit, 1), 100))
+
+    @app.get("/api/universes/{tournament_id}")
+    async def universe_tournament(tournament_id: str) -> dict[str, object]:
+        try:
+            return universe_lab.get(tournament_id)
+        except UniverseError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/universes/{tournament_id}/promote")
+    async def promote_universe_candidate(
+        tournament_id: str,
+        request: UniversePromoteRequest,
+    ) -> dict[str, object]:
+        try:
+            result = await universe_lab.promote(
+                tournament_id,
+                candidate_id=request.candidate_id,
+            )
+        except UniverseError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if not result.get("ok"):
+            raise HTTPException(status_code=409, detail=result)
+        return result
 
     @app.get("/api/sessions", response_model=list[SessionSummary])
     async def sessions() -> list[dict[str, str]]:
