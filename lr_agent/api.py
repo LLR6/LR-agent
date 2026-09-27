@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, JSONResponse
 
 from .agent import Agent
 from .config import Settings
@@ -35,6 +36,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="LR-Agent", version="0.4.0")
     web_index = Path(__file__).with_name("web") / "index.html"
 
+    def token_valid(candidate: str | None) -> bool:
+        if not settings.web_token:
+            return True
+        return bool(candidate) and hmac.compare_digest(candidate, settings.web_token)
+
+    @app.middleware("http")
+    async def require_api_token(request: Request, call_next):
+        if not settings.web_token or request.url.path in {"/", "/favicon.ico"}:
+            return await call_next(request)
+
+        authorization = request.headers.get("authorization", "")
+        candidate = (
+            authorization[7:].strip()
+            if authorization.lower().startswith("bearer ")
+            else None
+        )
+        if not token_valid(candidate):
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Missing or invalid LR-Agent web token"},
+            )
+        return await call_next(request)
+
     @app.get("/")
     async def index() -> FileResponse:
         return FileResponse(web_index)
@@ -47,6 +71,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "base_url": settings.base_url,
             "workspace": str(settings.workspace.resolve()),
             "max_steps": settings.max_steps,
+            "max_concurrent_tasks": settings.max_concurrent_tasks,
+            "approval_mode": settings.normalized_approval_mode,
+            "web_auth_enabled": bool(settings.web_token),
         }
 
     @app.post("/api/tasks", response_model=TaskStartResponse)
@@ -105,6 +132,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.websocket("/ws/tasks/{task_id}")
     async def task_events(websocket: WebSocket, task_id: str) -> None:
+        if not token_valid(websocket.query_params.get("token")):
+            await websocket.close(code=4401)
+            return
         if task_manager.get(task_id) is None:
             await websocket.close(code=4404)
             return
