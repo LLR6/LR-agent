@@ -370,27 +370,30 @@
   async function resumeRun(id) {
     if (send.disabled) return;
     send.disabled = true;
-    send.textContent = "恢复中";
-    runMeta.innerHTML = '<div class="meta">正在根据持久化证据恢复任务...</div>';
+    send.textContent = "后台恢复中";
+    liveSteps = [];
+    steps.innerHTML = '<div class="meta">等待恢复任务的实时工具事件...</div>';
+    runMeta.innerHTML = '<div class="meta">正在提交恢复任务...</div>';
+    reviewBox.innerHTML = '<div class="meta">等待 Reviewer...</div>';
     try {
-      const r = await fetch("/api/runs/" + encodeURIComponent(id) + "/resume", {
+      const r = await fetch("/api/runs/" + encodeURIComponent(id) + "/resume-task", {
         method: "POST"
       });
       const data = await r.json();
-      if (!r.ok) throw new Error(data.detail || "Resume failed");
-      sessionId = data.session_id;
-      addMessage("assistant", "已恢复上一轮任务。\n\n" + data.answer);
+      if (!r.ok) throw new Error(data.detail || "Resume submission failed");
+
       runMeta.innerHTML =
-        '<div class="plan-card"><b>' + esc(data.status || "unknown") +
-        '</b><div style="margin-top:6px">' + esc(data.run_id || "") + '</div></div>';
-      renderPlan(data.plan);
-      renderSteps(data.steps);
-      renderReview(data.review);
-      refreshSessions();
-      refreshRuns();
+        '<div class="plan-card"><b>' + esc(data.status || "queued") +
+        '</b><div style="margin-top:6px">task: ' + esc(data.task_id) + '</div></div>';
+
+      await streamTask(data.task_id);
     } catch (e) {
       runMeta.innerHTML = '<div class="bad">恢复失败：' + esc(e.message) + '</div>';
     } finally {
+      if (activeSocket) {
+        activeSocket.close();
+        activeSocket = null;
+      }
       send.disabled = false;
       send.textContent = "执行";
     }
