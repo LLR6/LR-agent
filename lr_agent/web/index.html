@@ -237,7 +237,9 @@
   </main>
 
   <section class="trace">
-    <h3>PLAN</h3>
+    <h3>RUN</h3>
+    <div id="runmeta"><div class="meta">尚未开始任务。</div></div>
+    <h3 class="section">PLAN</h3>
     <div id="plan"><div class="meta">Coder / Research 模式会先生成可验证计划。</div></div>
     <h3 class="section">EXECUTION TRACE</h3>
     <div id="steps"><div class="meta">还没有工具调用。</div></div>
@@ -252,6 +254,7 @@
   const send = document.getElementById("send");
   const messages = document.getElementById("messages");
   const steps = document.getElementById("steps");
+  const runMeta = document.getElementById("runmeta");
   const planBox = document.getElementById("plan");
   const reviewBox = document.getElementById("review");
   const mode = document.getElementById("mode");
@@ -341,6 +344,7 @@
       messages.innerHTML = "";
       data.forEach(item => addMessage(item.role === "user" ? "user" : "assistant", item.content));
       steps.innerHTML = '<div class="meta">历史会话已加载；执行轨迹只显示当前新一轮。</div>';
+      runMeta.innerHTML = '<div class="meta">发起下一轮任务后显示新的 run id。</div>';
       planBox.innerHTML = '<div class="meta">历史消息已加载；计划不单独持久化显示。</div>';
       reviewBox.innerHTML = '<div class="meta">发起下一轮任务后显示新的审查结果。</div>';
       input.focus();
@@ -369,6 +373,7 @@
     send.disabled = true;
     send.textContent = "执行中";
     steps.innerHTML = '<div class="meta">Agent 正在执行工具...</div>';
+    runMeta.innerHTML = '<div class="meta">正在创建持久化运行记录...</div>';
     planBox.innerHTML = '<div class="meta">正在生成计划...</div>';
     reviewBox.innerHTML = '<div class="meta">等待执行结果...</div>';
 
@@ -386,6 +391,9 @@
       if (!r.ok) throw new Error(data.detail || "Request failed");
       sessionId = data.session_id;
       addMessage("assistant", data.answer);
+      runMeta.innerHTML =
+        '<div class="plan-card"><b>' + esc(data.status || "unknown") +
+        '</b><div style="margin-top:6px">' + esc(data.run_id || "") + '</div></div>';
       renderPlan(data.plan);
       renderSteps(data.steps);
       renderReview(data.review);
@@ -411,6 +419,7 @@
     sessionId = null;
     messages.innerHTML = '<div class="empty" id="empty">新会话已开始。</div>';
     steps.innerHTML = '<div class="meta">还没有工具调用。</div>';
+    runMeta.innerHTML = '<div class="meta">尚未开始任务。</div>';
     planBox.innerHTML = '<div class="meta">Coder / Research 模式会先生成可验证计划。</div>';
     reviewBox.innerHTML = '<div class="meta">执行完成后进行结果审查。</div>';
   });
