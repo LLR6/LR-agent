@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import shlex
 
 import typer
 import uvicorn
@@ -10,6 +11,7 @@ from rich.panel import Panel
 from .agent import Agent
 from .api import create_app
 from .config import Settings
+from .genome import CausalGenomeEngine, GenomeError
 from .journal import WorkspaceJournal
 from .llm import LLMError, OpenAICompatibleClient
 from .memory import MemoryStore
@@ -320,6 +322,307 @@ def forge_promote(
             title=f"Promoted {result['candidate_id']}",
         )
     )
+
+
+@cli.command("genome-stats")
+def genome_stats() -> None:
+    """Show Causal Genome and Invariant DNA statistics."""
+    settings = Settings()
+    settings.ensure_dirs()
+    engine = CausalGenomeEngine(settings)
+    stats = engine.stats()
+    console.print(Panel(str(stats), title="Causal Genome"))
+
+
+@cli.command("genome-list")
+def genome_list(
+    status: str | None = typer.Option(
+        None,
+        help="Optional status filter: quarantine | active | contested | contaminated | retired",
+    ),
+    kind: str | None = typer.Option(
+        None,
+        help="Optional kind filter: strategy | anti",
+    ),
+    limit: int = typer.Option(50, help="Maximum genes"),
+) -> None:
+    """List strategy genes and anti-genes."""
+    settings = Settings()
+    settings.ensure_dirs()
+    engine = CausalGenomeEngine(settings)
+    items = engine.store.list_genes(
+        status=status,
+        kind=kind,
+        limit=min(max(limit, 1), 500),
+    )
+    if not items:
+        console.print("[yellow]No genes matched.[/yellow]")
+        return
+    for item in items:
+        console.print(
+            Panel(
+                "\n".join(
+                    [
+                        f"id: {item['id']}",
+                        f"kind/status: {item['kind']} / {item['status']}",
+                        f"confidence: {item['confidence']:.3f}",
+                        f"effect(avg): {item['average_effect']:.2f}",
+                        (
+                            "evidence: "
+                            f"+{item['positive_count']} "
+                            f"-{item['negative_count']} "
+                            f"~{item['neutral_count']}"
+                        ),
+                        f"instruction: {item['instruction'][:500]}",
+                    ]
+                ),
+                title=item["name"],
+            )
+        )
+
+
+@cli.command("genome-add")
+def genome_add(
+    name: str = typer.Argument(..., help="Gene name"),
+    instruction: str = typer.Argument(..., help="Strategy instruction"),
+    applies_to: list[str] = typer.Option(
+        [],
+        "--applies-to",
+        help="Applicability clue; may be repeated",
+    ),
+    excludes: list[str] = typer.Option(
+        [],
+        "--exclude",
+        help="Known exclusion/boundary; may be repeated",
+    ),
+) -> None:
+    """Create a quarantined strategy gene manually."""
+    settings = Settings()
+    settings.ensure_dirs()
+    engine = CausalGenomeEngine(settings)
+    gene = engine.create_gene(
+        name=name,
+        instruction=instruction,
+        applicability=applies_to,
+        exclusions=excludes,
+        provenance={"source": "manual_cli"},
+    )
+    console.print(
+        Panel(
+            f"id: {gene['id']}\nstatus: {gene['status']}",
+            title=f"Gene created · {gene['name']}",
+        )
+    )
+
+
+@cli.command("genome-import")
+def genome_import(
+    tournament_id: str = typer.Argument(..., help="Completed Forge tournament id"),
+    candidate_id: str | None = typer.Option(
+        None,
+        help="Candidate id; defaults to Forge winner",
+    ),
+) -> None:
+    """Import a Forge candidate into genome quarantine without pretending it is causal proof."""
+    settings = Settings()
+    settings.ensure_dirs()
+    engine = CausalGenomeEngine(settings)
+    try:
+        gene = engine.import_forge_winner(
+            tournament_id,
+            candidate_id=candidate_id,
+        )
+    except GenomeError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1)
+    console.print(
+        Panel(
+            (
+                f"id: {gene['id']}\n"
+                f"status: {gene['status']}\n"
+                "Forge success is provenance only. Run genome-ablate before activation."
+            ),
+            title=f"Imported gene · {gene['name']}",
+        )
+    )
+
+
+def _print_ablation(result: dict[str, object]) -> None:
+    gene = result.get("gene") or {}
+    console.print(
+        Panel(
+            "\n".join(
+                [
+                    f"gene: {gene.get('name', '-')}",
+                    f"status: {gene.get('status', '-')}",
+                    f"confidence: {float(gene.get('confidence', 0)):.3f}",
+                    f"average effect: {gene.get('average_effect', '-')}",
+                    f"trials completed: {result.get('trials_completed')}",
+                    f"average trial effect: {result.get('average_trial_effect')}",
+                    f"anti-genes created/reused: {len(result.get('anti_genes') or [])}",
+                ]
+            ),
+            title=str(result.get("experiment_type", "ablation")),
+        )
+    )
+    for item in result.get("experiments") or []:
+        console.print(
+            f"trial {item.get('trial')}: {item.get('status')} "
+            f"effect={item.get('effect', '-')} outcome={item.get('outcome', '-')}"
+        )
+
+
+@cli.command("genome-ablate")
+def genome_ablate(
+    gene_id: str = typer.Argument(..., help="Gene id"),
+    task: str = typer.Argument(..., help="Real coding task for treatment-vs-control test"),
+    trials: int = typer.Option(1, min=1, max=5, help="Independent ablation trials"),
+) -> None:
+    """Run a treatment-vs-control Counterfactual Forge ablation for one gene."""
+    settings = Settings()
+    settings.ensure_dirs()
+    engine = CausalGenomeEngine(settings)
+    try:
+        result = asyncio.run(
+            engine.ablate(
+                gene_id,
+                task,
+                trials=trials,
+                falsification=False,
+            )
+        )
+    except GenomeError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1)
+    _print_ablation(result)
+
+
+@cli.command("genome-falsify")
+def genome_falsify(
+    gene_id: str = typer.Argument(..., help="Gene id"),
+    task: str = typer.Argument(..., help="Task/context used to attack the gene"),
+    trials: int = typer.Option(1, min=1, max=5, help="Falsification trials"),
+) -> None:
+    """Actively try to falsify a strategy gene in counterfactual shadow universes."""
+    settings = Settings()
+    settings.ensure_dirs()
+    engine = CausalGenomeEngine(settings)
+    try:
+        result = asyncio.run(
+            engine.falsify(
+                gene_id,
+                task,
+                trials=trials,
+            )
+        )
+    except GenomeError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1)
+    _print_ablation(result)
+
+
+@cli.command("genome-contaminate")
+def genome_contaminate(
+    gene_id: str = typer.Argument(..., help="Gene id"),
+    reason: str = typer.Argument(..., help="Why this gene is no longer trusted"),
+    no_propagate: bool = typer.Option(
+        False,
+        "--no-propagate",
+        help="Do not contaminate descendants",
+    ),
+) -> None:
+    """Mark a gene contaminated and, by default, propagate distrust through descendants."""
+    settings = Settings()
+    settings.ensure_dirs()
+    engine = CausalGenomeEngine(settings)
+    result = engine.contaminate(
+        gene_id,
+        reason=reason,
+        propagate=not no_propagate,
+    )
+    console.print(
+        Panel(
+            "\n".join(result["affected_gene_ids"]),
+            title=f"Contaminated · {len(result['affected_gene_ids'])} genes",
+        )
+    )
+
+
+@cli.command("invariant-list")
+def invariant_list() -> None:
+    """List active Invariant DNA."""
+    settings = Settings()
+    settings.ensure_dirs()
+    engine = CausalGenomeEngine(settings)
+    items = engine.store.list_invariants(status="active", limit=500)
+    if not items:
+        console.print("[yellow]No active invariants.[/yellow]")
+        return
+    for item in items:
+        console.print(
+            Panel(
+                (
+                    f"id: {item['id']}\n"
+                    f"description: {item['description']}\n"
+                    f"commands: {item['commands']}\n"
+                    f"last check: {item['last_status'] or 'never'}"
+                ),
+                title=item["name"],
+            )
+        )
+
+
+@cli.command("invariant-add")
+def invariant_add(
+    name: str = typer.Argument(..., help="Invariant name"),
+    description: str = typer.Argument(..., help="What must remain true"),
+    command: list[str] = typer.Option(
+        ...,
+        "--command",
+        help='Executable check, e.g. --command "pytest tests/test_auth.py"; repeatable',
+    ),
+) -> None:
+    """Add executable project Invariant DNA."""
+    settings = Settings()
+    settings.ensure_dirs()
+    commands: list[dict[str, object]] = []
+    for value in command:
+        argv = shlex.split(value)
+        if not argv:
+            console.print("[red]Invariant command cannot be empty.[/red]")
+            raise typer.Exit(code=2)
+        commands.append({"argv": argv, "cwd": "."})
+
+    engine = CausalGenomeEngine(settings)
+    try:
+        invariant = engine.register_invariant(
+            name=name,
+            description=description,
+            commands=commands,
+        )
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=2)
+    console.print(
+        Panel(
+            f"id: {invariant['id']}\ncommands: {invariant['commands']}",
+            title=f"Invariant DNA · {invariant['name']}",
+        )
+    )
+
+
+@cli.command("invariant-check")
+def invariant_check() -> None:
+    """Execute all active Invariant DNA checks in the real workspace."""
+    settings = Settings()
+    settings.ensure_dirs()
+    engine = CausalGenomeEngine(settings)
+    result = asyncio.run(engine.check_invariants())
+    for item in result["results"]:
+        state = "[green]PASS[/green]" if item["passed"] else "[red]FAIL[/red]"
+        console.print(f"{state}  {item['name']}")
+    if result["passed"] is False:
+        raise typer.Exit(code=2)
 
 
 @cli.command("tasks")
