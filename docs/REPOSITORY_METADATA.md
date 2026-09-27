@@ -36,13 +36,19 @@ research
 
 ## Social preview
 
-Artwork source committed at:
+Ready-to-upload PNG:
+
+```text
+docs/media/lr-agent-social-preview.png
+```
+
+Canonical editable SVG:
 
 ```text
 docs/media/lr-agent-social-preview.svg
 ```
 
-GitHub repository settings currently require a PNG/JPG/GIF upload for the repository Social Preview in the web UI. The SVG is the canonical source artwork.
+The PNG is rendered automatically by `.github/workflows/render-social-preview.yml` whenever the SVG changes.
 
 ## Homepage
 
