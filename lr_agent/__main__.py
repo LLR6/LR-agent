@@ -10,6 +10,7 @@ from rich.panel import Panel
 from .agent import Agent
 from .api import create_app
 from .config import Settings
+from .journal import WorkspaceJournal
 from .llm import LLMError, OpenAICompatibleClient
 from .memory import MemoryStore
 from .tools import ToolRegistry
@@ -244,6 +245,50 @@ def resume(run_id: str = typer.Argument(..., help="Persisted run id")) -> None:
     except LLMError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1)
+
+
+@cli.command()
+def rollback(
+    run_id: str = typer.Argument(..., help="Persisted run id"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+) -> None:
+    """Restore direct file-tool changes from a completed run."""
+    settings = Settings()
+    settings.ensure_dirs()
+    store = MemoryStore(settings.database)
+    if store.get_run(run_id) is None:
+        console.print(f"[red]Run not found: {run_id}[/red]")
+        raise typer.Exit(code=1)
+
+    if not yes:
+        console.print(
+            "[yellow]Rollback covers direct LR-Agent file tools only. "
+            "run_command/build-script side effects are not included.[/yellow]"
+        )
+        answer = console.input("[bold]Continue? [y/N]: [/bold]").strip().lower()
+        if answer not in {"y", "yes"}:
+            console.print("Cancelled.")
+            return
+
+    tools = ToolRegistry(settings)
+    journal = WorkspaceJournal(settings, store, tools)
+    result = asyncio.run(journal.rollback(run_id))
+    if result["rolled_back"]:
+        console.print(
+            Panel(
+                "\n".join(result["restored"]) or "No paths",
+                title="Rollback completed",
+            )
+        )
+        return
+
+    console.print(f"[yellow]{result['message']}[/yellow]")
+    for conflict in result.get("conflicts", []):
+        console.print(
+            f"[red]{conflict['path']}[/red] "
+            f"expected={conflict['expected_kind']} current={conflict['current_kind']}"
+        )
+    raise typer.Exit(code=2)
 
 
 @cli.command()
