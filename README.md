@@ -12,6 +12,7 @@
 
 <p align="center">
   <a href="./README_EN.md">English</a> ·
+  <a href="https://github.com/LLR6/LR-agent/releases/tag/v1.1.0">v1.1.0 Release</a> ·
   <a href="./docs/DEMO_CHRONOFORGE.md">5 分钟 Demo</a> ·
   <a href="./docs/research/README.md">Research</a> ·
   <a href="./CONTRIBUTING.md">Contributing</a>
