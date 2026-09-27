@@ -70,7 +70,7 @@
       border-color: rgba(88,216,255,.36);
     }
     .new { width: 100%; margin-bottom: 18px; }
-    .session {
+    .session, .run-item {
       width: 100%;
       text-align: left;
       margin: 5px 0;
@@ -78,6 +78,13 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+    .side-title {
+      margin: 22px 4px 8px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .12em;
     }
     main {
       display: grid;
@@ -204,7 +211,10 @@
   <aside>
     <div class="brand"><div class="orb"></div> LR-Agent</div>
     <button class="new primary" id="newSession">＋ 新会话</button>
+    <div class="side-title">SESSIONS</div>
     <div id="sessions"></div>
+    <div class="side-title">RECENT RUNS</div>
+    <div id="runs"></div>
   </aside>
 
   <main>
@@ -320,6 +330,71 @@
       '</div>';
   }
 
+  async function refreshRuns() {
+    try {
+      const r = await fetch("/api/runs?limit=15");
+      if (!r.ok) return;
+      const data = await r.json();
+      const holder = document.getElementById("runs");
+      holder.innerHTML = data.map(item =>
+        '<button class="run-item" data-id="' + esc(item.id) + '" title="' +
+        esc(item.task) + '">[' + esc(item.status) + '] ' + esc(item.task) + '</button>'
+      ).join("");
+      holder.querySelectorAll(".run-item").forEach(btn => {
+        btn.addEventListener("click", () => loadRun(btn.dataset.id));
+      });
+    } catch (_) {}
+  }
+
+  async function loadRun(id) {
+    try {
+      const r = await fetch("/api/runs/" + encodeURIComponent(id));
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || "Failed to load run");
+      runMeta.innerHTML =
+        '<div class="plan-card"><b>' + esc(data.status || "unknown") +
+        '</b><div style="margin-top:6px">' + esc(data.id || "") + '</div>' +
+        '<button id="resumeLoadedRun" style="margin-top:10px;width:100%">继续此任务</button></div>';
+      renderPlan(data.plan);
+      renderSteps(data.steps || []);
+      renderReview(data.review);
+      const button = document.getElementById("resumeLoadedRun");
+      if (button) button.addEventListener("click", () => resumeRun(data.id));
+    } catch (e) {
+      runMeta.innerHTML = '<div class="bad">加载 run 失败：' + esc(e.message) + '</div>';
+    }
+  }
+
+  async function resumeRun(id) {
+    if (send.disabled) return;
+    send.disabled = true;
+    send.textContent = "恢复中";
+    runMeta.innerHTML = '<div class="meta">正在根据持久化证据恢复任务...</div>';
+    try {
+      const r = await fetch("/api/runs/" + encodeURIComponent(id) + "/resume", {
+        method: "POST"
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || "Resume failed");
+      sessionId = data.session_id;
+      addMessage("assistant", "已恢复上一轮任务。\n\n" + data.answer);
+      runMeta.innerHTML =
+        '<div class="plan-card"><b>' + esc(data.status || "unknown") +
+        '</b><div style="margin-top:6px">' + esc(data.run_id || "") + '</div></div>';
+      renderPlan(data.plan);
+      renderSteps(data.steps);
+      renderReview(data.review);
+      refreshSessions();
+      refreshRuns();
+      refreshRuns();
+    } catch (e) {
+      runMeta.innerHTML = '<div class="bad">恢复失败：' + esc(e.message) + '</div>';
+    } finally {
+      send.disabled = false;
+      send.textContent = "执行";
+    }
+  }
+
   async function refreshSessions() {
     try {
       const r = await fetch("/api/sessions");
@@ -426,6 +501,7 @@
 
   health();
   refreshSessions();
+  refreshRuns();
   input.focus();
 </script>
 </body>
