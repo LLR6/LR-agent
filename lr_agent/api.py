@@ -105,6 +105,36 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="Run not found")
         return item
 
+    @app.post("/api/runs/{run_id}/resume-task", response_model=TaskStartResponse)
+    async def resume_run_task(run_id: str) -> TaskStartResponse:
+        item = memory.get_run(run_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail="Run not found")
+
+        evidence = {
+            "previous_run_id": run_id,
+            "previous_status": item.get("status"),
+            "original_task": item.get("task"),
+            "plan": item.get("plan"),
+            "review": item.get("review"),
+            "steps": (item.get("steps") or [])[-20:],
+            "previous_answer": item.get("answer"),
+        }
+        prompt = (
+            "Resume this previous LR-Agent run. Re-check current workspace state before "
+            "assuming earlier state is still valid. Continue unresolved work, use tools "
+            "for verification, and do not merely summarize the old run.\n\n"
+            + json.dumps(evidence, ensure_ascii=False)
+        )
+        task_id = task_manager.submit(
+            ChatRequest(
+                message=prompt,
+                session_id=str(item["session_id"]),
+                mode=str(item["mode"]),
+            )
+        )
+        return TaskStartResponse(task_id=task_id, status="queued")
+
     @app.post("/api/runs/{run_id}/resume", response_model=ChatResponse)
     async def resume_run(run_id: str) -> ChatResponse:
         item = memory.get_run(run_id)
