@@ -261,3 +261,104 @@ async def test_relative_workspace_executable_resolves_from_cwd(registry: ToolReg
     )
     assert result["ok"] is True
     assert "relative-ok" in result["result"]["stdout"]
+
+
+@pytest.mark.asyncio
+async def test_ranged_read_move_and_delete_file(registry: ToolRegistry) -> None:
+    await registry.execute(
+        "write_file",
+        {"path": "src/source.txt", "content": "one\ntwo\nthree\nfour\n"},
+    )
+
+    partial = await registry.execute(
+        "read_file",
+        {"path": "src/source.txt", "start_line": 2, "end_line": 3},
+    )
+    assert partial["ok"] is True
+    assert partial["result"]["content"] == "two\nthree\n"
+    assert partial["result"]["line_start"] == 2
+    assert partial["result"]["line_end"] == 3
+    assert partial["result"]["total_lines"] == 4
+
+    moved = await registry.execute(
+        "move_file",
+        {
+            "source": "src/source.txt",
+            "destination": "renamed/target.txt",
+        },
+    )
+    assert moved["ok"] is True
+    assert not (registry.root / "src/source.txt").exists()
+    assert (registry.root / "renamed/target.txt").exists()
+
+    deleted = await registry.execute(
+        "delete_file",
+        {"path": "renamed/target.txt"},
+    )
+    assert deleted["ok"] is True
+    assert not (registry.root / "renamed/target.txt").exists()
+
+
+@pytest.mark.asyncio
+async def test_make_directory_and_directory_delete_guard(registry: ToolRegistry) -> None:
+    created = await registry.execute(
+        "make_directory",
+        {"path": "a/b/c"},
+    )
+    assert created["ok"] is True
+    assert (registry.root / "a/b/c").is_dir()
+
+    refused = await registry.execute(
+        "delete_file",
+        {"path": "a"},
+    )
+    assert refused["ok"] is False
+    assert "not directories" in refused["error"]
+
+
+@pytest.mark.asyncio
+async def test_new_file_mutations_participate_in_approval_gate(
+    registry: ToolRegistry,
+) -> None:
+    registry.settings.approval_mode = "writes"
+    await registry.execute(
+        "write_file",
+        {"path": "source.txt", "content": "hello"},
+        approval_handler=lambda *args: _approve_immediately(*args),
+    )
+
+    approvals = []
+
+    async def approve(tool, arguments, preview):
+        approvals.append((tool, preview))
+        return True
+
+    mkdir = await registry.execute(
+        "make_directory",
+        {"path": "target"},
+        approval_handler=approve,
+    )
+    move = await registry.execute(
+        "move_file",
+        {
+            "source": "source.txt",
+            "destination": "target/source.txt",
+        },
+        approval_handler=approve,
+    )
+    delete = await registry.execute(
+        "delete_file",
+        {"path": "target/source.txt"},
+        approval_handler=approve,
+    )
+
+    assert mkdir["ok"] and move["ok"] and delete["ok"]
+    assert [item[0] for item in approvals] == [
+        "make_directory",
+        "move_file",
+        "delete_file",
+    ]
+
+
+async def _approve_immediately(_tool, _arguments, _preview):
+    return True
