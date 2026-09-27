@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 
 def _now() -> str:
@@ -41,6 +43,37 @@ class MemoryStore:
 
                 CREATE INDEX IF NOT EXISTS idx_messages_session_id
                     ON messages(session_id, id);
+
+                CREATE TABLE IF NOT EXISTS runs (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    mode TEXT NOT NULL,
+                    task TEXT NOT NULL,
+                    plan_json TEXT,
+                    status TEXT NOT NULL,
+                    answer TEXT,
+                    review_json TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(session_id) REFERENCES sessions(id)
+                );
+
+                CREATE TABLE IF NOT EXISTS run_steps (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id TEXT NOT NULL,
+                    step_index INTEGER NOT NULL,
+                    tool TEXT NOT NULL,
+                    arguments_json TEXT NOT NULL,
+                    ok INTEGER NOT NULL,
+                    preview TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(run_id) REFERENCES runs(id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_runs_session_id
+                    ON runs(session_id, created_at);
+                CREATE INDEX IF NOT EXISTS idx_run_steps_run_id
+                    ON run_steps(run_id, step_index);
                 """
             )
 
@@ -104,6 +137,136 @@ class MemoryStore:
                 (session_id, limit),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def start_run(
+        self,
+        session_id: str,
+        *,
+        mode: str,
+        task: str,
+        plan: dict[str, Any] | None,
+    ) -> str:
+        run_id = uuid.uuid4().hex
+        now = _now()
+        plan_json = json.dumps(plan, ensure_ascii=False) if plan is not None else None
+        with self._lock, self._conn:
+            self._conn.execute(
+                """
+                INSERT INTO runs(
+                    id, session_id, mode, task, plan_json, status,
+                    answer, review_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, 'running', NULL, NULL, ?, ?)
+                """,
+                (run_id, session_id, mode, task, plan_json, now, now),
+            )
+        return run_id
+
+    def add_run_step(
+        self,
+        run_id: str,
+        *,
+        step_index: int,
+        tool: str,
+        arguments: dict[str, Any],
+        ok: bool,
+        preview: str,
+    ) -> None:
+        now = _now()
+        with self._lock, self._conn:
+            self._conn.execute(
+                """
+                INSERT INTO run_steps(
+                    run_id, step_index, tool, arguments_json, ok, preview, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    step_index,
+                    tool,
+                    json.dumps(arguments, ensure_ascii=False),
+                    1 if ok else 0,
+                    preview,
+                    now,
+                ),
+            )
+            self._conn.execute(
+                "UPDATE runs SET updated_at = ? WHERE id = ?",
+                (now, run_id),
+            )
+
+    def finish_run(
+        self,
+        run_id: str,
+        *,
+        answer: str,
+        review: dict[str, Any] | None,
+        status: str = "completed",
+    ) -> None:
+        now = _now()
+        review_json = json.dumps(review, ensure_ascii=False) if review is not None else None
+        with self._lock, self._conn:
+            self._conn.execute(
+                """
+                UPDATE runs
+                SET status = ?, answer = ?, review_json = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (status, answer, review_json, now, run_id),
+            )
+
+    def list_runs(self, limit: int = 50) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                """
+                SELECT id, session_id, mode, task, status, created_at, updated_at
+                FROM runs
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_run(self, run_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                """
+                SELECT id, session_id, mode, task, plan_json, status,
+                       answer, review_json, created_at, updated_at
+                FROM runs
+                WHERE id = ?
+                """,
+                (run_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            steps = self._conn.execute(
+                """
+                SELECT step_index, tool, arguments_json, ok, preview, created_at
+                FROM run_steps
+                WHERE run_id = ?
+                ORDER BY step_index ASC
+                """,
+                (run_id,),
+            ).fetchall()
+
+        result = dict(row)
+        plan_json = result.pop("plan_json")
+        review_json = result.pop("review_json")
+        result["plan"] = json.loads(plan_json) if plan_json else None
+        result["review"] = json.loads(review_json) if review_json else None
+        result["steps"] = [
+            {
+                "index": step["step_index"],
+                "tool": step["tool"],
+                "arguments": json.loads(step["arguments_json"]),
+                "ok": bool(step["ok"]),
+                "preview": step["preview"],
+                "created_at": step["created_at"],
+            }
+            for step in steps
+        ]
+        return result
 
     def list_sessions(self, limit: int = 50) -> list[dict[str, str]]:
         with self._lock:
