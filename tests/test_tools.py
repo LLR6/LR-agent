@@ -24,6 +24,7 @@ async def test_file_write_read_replace(registry: ToolRegistry) -> None:
         {"path": "src/demo.txt", "content": "hello world"},
     )
     assert created["ok"] is True
+    assert "+++ b/src/demo.txt" in created["result"]["diff"]
 
     read = await registry.execute("read_file", {"path": "src/demo.txt"})
     assert read["result"]["content"] == "hello world"
@@ -38,6 +39,8 @@ async def test_file_write_read_replace(registry: ToolRegistry) -> None:
         },
     )
     assert changed["ok"] is True
+    assert "-hello world" in changed["result"]["diff"]
+    assert "+hello agent" in changed["result"]["diff"]
 
     read2 = await registry.execute("read_file", {"path": "src/demo.txt"})
     assert read2["result"]["content"] == "hello agent"
@@ -83,3 +86,26 @@ async def test_github_write_is_blocked_by_default(registry: ToolRegistry) -> Non
     )
     assert result["ok"] is False
     assert "GitHub writes are disabled" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_git_status_and_diff_are_read_only(registry: ToolRegistry) -> None:
+    registry.settings.allowed_commands = "git,python"
+    init = await registry.execute("run_command", {"argv": ["git", "init"]})
+    assert init["ok"] is True
+    await registry.execute(
+        "write_file",
+        {"path": "tracked.txt", "content": "first\n"},
+    )
+    await registry.execute(
+        "run_command",
+        {"argv": ["git", "add", "tracked.txt"]},
+    )
+
+    staged = await registry.execute("git_diff", {"staged": True})
+    assert staged["ok"] is True
+    assert "+first" in staged["result"]["stdout"]
+
+    status = await registry.execute("git_status", {})
+    assert status["ok"] is True
+    assert "tracked.txt" in status["result"]["stdout"]
