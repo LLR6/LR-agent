@@ -1,0 +1,45 @@
+name: Feature / experiment proposal
+description: Propose an engineering feature, ablation, benchmark, or research experiment
+title: "[Proposal] "
+labels: []
+body:
+  - type: dropdown
+    id: type
+    attributes:
+      label: Proposal type
+      options:
+        - Engineering feature
+        - Benchmark / dataset
+        - Ablation experiment
+        - ChronoForge scenario
+        - Causal Genome experiment
+        - Safety / reliability
+        - Documentation / demo
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What concrete limitation does this address?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: How would we know it helped?
+      description: Prefer an executable check, benchmark, or falsifiable metric.
+    validations:
+      required: true
+  - type: textarea
+    id: related
+    attributes:
+      label: Related work / prior art
+      description: Links are welcome, especially if they narrow a novelty claim.
