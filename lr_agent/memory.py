@@ -75,6 +75,24 @@ class MemoryStore:
                 CREATE INDEX IF NOT EXISTS idx_run_steps_run_id
                     ON run_steps(run_id, step_index);
 
+                CREATE TABLE IF NOT EXISTS run_snapshots (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id TEXT NOT NULL,
+                    path TEXT NOT NULL,
+                    original_kind TEXT NOT NULL,
+                    original_content BLOB,
+                    original_mode INTEGER,
+                    original_hash TEXT,
+                    final_kind TEXT,
+                    final_hash TEXT,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(run_id, path),
+                    FOREIGN KEY(run_id) REFERENCES runs(id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_run_snapshots_run_id
+                    ON run_snapshots(run_id, id);
+
                 CREATE TABLE IF NOT EXISTS tasks (
                     id TEXT PRIMARY KEY,
                     message TEXT NOT NULL,
@@ -191,6 +209,75 @@ class MemoryStore:
                 (run_id, session_id, mode, task, plan_json, now, now),
             )
         return run_id
+
+    def save_run_snapshot(
+        self,
+        run_id: str,
+        *,
+        path: str,
+        original_kind: str,
+        original_content: bytes | None,
+        original_mode: int | None,
+        original_hash: str | None,
+    ) -> bool:
+        with self._lock, self._conn:
+            cursor = self._conn.execute(
+                """
+                INSERT OR IGNORE INTO run_snapshots(
+                    run_id, path, original_kind, original_content,
+                    original_mode, original_hash, final_kind, final_hash, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?)
+                """,
+                (
+                    run_id,
+                    path,
+                    original_kind,
+                    original_content,
+                    original_mode,
+                    original_hash,
+                    _now(),
+                ),
+            )
+        return cursor.rowcount > 0
+
+    def update_run_snapshot_final(
+        self,
+        run_id: str,
+        *,
+        path: str,
+        final_kind: str,
+        final_hash: str | None,
+    ) -> None:
+        with self._lock, self._conn:
+            self._conn.execute(
+                """
+                UPDATE run_snapshots
+                SET final_kind = ?, final_hash = ?
+                WHERE run_id = ? AND path = ?
+                """,
+                (final_kind, final_hash, run_id, path),
+            )
+
+    def list_run_snapshots(self, run_id: str) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                """
+                SELECT id, run_id, path, original_kind, original_content,
+                       original_mode, original_hash, final_kind, final_hash, created_at
+                FROM run_snapshots
+                WHERE run_id = ?
+                ORDER BY id ASC
+                """,
+                (run_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def update_run_status(self, run_id: str, status: str) -> None:
+        with self._lock, self._conn:
+            self._conn.execute(
+                "UPDATE runs SET status = ?, updated_at = ? WHERE id = ?",
+                (status, _now(), run_id),
+            )
 
     def add_run_step(
         self,
