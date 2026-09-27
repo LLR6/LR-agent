@@ -894,13 +894,21 @@
       (skippedLarge ? ' · skipped large files: ' + skippedLarge : '') +
       '</div>';
 
+    const latestPromotion = (data.promotions || []).at(-1);
+    const proof = latestPromotion?.proof_sha256
+      ? '<div class="forge-card winner" style="margin-top:9px">' +
+        '<b>PROOF-CARRYING PATCH</b><div style="margin-top:5px">proof: ' +
+        esc(latestPromotion.proof_sha256) + '</div><div>verification: ' +
+        esc(latestPromotion.verification?.status || "unknown") + '</div></div>'
+      : '';
     const promote = data.status === "completed" && data.winner_id
       ? '<button class="primary" id="promoteForgeWinner" style="width:100%;margin-top:10px">' +
-        '晋升胜者到真实工作区</button>'
+        '晋升胜者 + 真实环境复验</button>'
       : '';
 
     forgePanel.innerHTML =
-      statusLine + '<div class="forge-grid" style="margin-top:9px">' + cards + '</div>' + promote;
+      statusLine + '<div class="forge-grid" style="margin-top:9px">' + cards + '</div>' +
+      proof + promote;
 
     const button = document.getElementById("promoteForgeWinner");
     if (button) {
@@ -985,20 +993,27 @@
         {
           method: "POST",
           headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({candidate_id: null})
+          body: JSON.stringify({candidate_id: null, verify: true})
         }
       );
       const data = await r.json();
       if (!r.ok) {
         const detail = data.detail || data;
-        if (detail?.conflicts) {
+        if (detail?.rolled_back) {
+          throw new Error(
+            "胜者已临时应用，但真实 workspace 复验失败；LR-Agent 已自动回滚。"
+          );
+        }
+        if (detail?.conflicts?.length) {
           throw new Error("检测到 " + detail.conflicts.length + " 个工作区冲突，已拒绝覆盖。");
         }
         throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
       }
       addMessage(
         "assistant",
-        "Forge 胜者已安全晋升。应用文件：" + (data.applied || []).join(", ")
+        "Forge 胜者已安全晋升并在真实 workspace 复验。应用文件：" +
+        (data.applied || []).join(", ") + "\nProof SHA-256: " +
+        (data.proof_sha256 || "n/a")
       );
       const latest = await apiFetch("/api/universes/" + encodeURIComponent(tournamentId));
       renderForge(await latest.json());
