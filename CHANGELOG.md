@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.6.0 - 2026-09-27
+
+### Added
+
+- Live stdout/stderr streaming from allowlisted command subprocesses into the Agent event stream and Web UI.
+- Web UI cancellation control for running or queued background tasks.
+- `project_inspect` tool for Python, Node, Rust, Go, Maven, Gradle, CMake and Git projects.
+- Safe `delete_file`, `move_file`, `make_directory` tools.
+- Line-ranged `read_file` support.
+- Common build/test executables in the default command allowlist.
+- CI Python bytecode compilation and Web UI JavaScript syntax validation.
+
+### Changed
+
+- Workspace-relative executables are resolved against the requested command cwd.
+- Coder system guidance now explicitly prefers stack inspection, relevant verification
+  commands and Git diff/status evidence.
+- Tool event forwarding now carries live command output before the final tool result.
+- Package and API version updated to 0.6.0.
+
+### Safety
+
+- New file mutation tools participate in the existing interactive approval system.
+- `delete_file` intentionally refuses directory deletion.
+- Command cancellation continues to terminate the directly managed child process.
+- Retrieved files, tool output and project context remain explicitly untrusted data.
+
 ## 0.5.0 - 2026-09-27
 
 ### Added
