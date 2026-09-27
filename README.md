@@ -2,7 +2,7 @@
 
 一个**真实可运行**的本地 AI Agent。它不是静态聊天页面：模型可以在受控工具权限下读取/修改工作区文件、执行白名单命令、访问公开 HTTP(S) 资源，并通过 SQLite 记住会话。
 
-> 当前版本：`1.0.0`。在 Counterfactual Forge 之上加入 **Causal Genome Engine（因果策略基因组）**：成功一次的策略不会直接变成“长期经验”，而是先进入 quarantine，再通过 Treatment vs Control 平行宇宙消融、主动证伪、反例 Anti-Gene、血缘污染传播、Proof-Carrying Gene 和 Invariant DNA 才能逐步获得信任。Agent 运行中还加入 **Epistemic Tripwire**，当它重复失败或无验证地反复修改同一路径时，会主动打断机械循环并要求重新检查假设。
+> 当前版本：`1.1.0`。新增 **ChronoForge — Prospective Software Evolution Laboratory**：代码或 Forge 候选补丁在进入现实前，可以先被复制到多条连续的“未来仓库时间线”中，经历依赖升级、API 弃用、相邻功能、Schema 迁移、模块拆分、运行时变化、性能压力和配置契约变化。每一代未来都继承上一代真实代码，再由 Future Maintainer Agent 继续维护；系统随后重放原始验证与 Invariant DNA，输出 Temporal Survival Curve、维护成本、Maintenance Option Value 和预测半衰期。
 
 ## 已实现
 
@@ -30,6 +30,12 @@
 - **Invariant DNA**：保存“这个项目长期必须保持什么”的可执行不变量；Forge 胜者即使自己的测试通过，只要真实 workspace 上破坏任一 active invariant，也会自动回滚
 - **Epistemic Tripwire**：检测重复相同失败、同一路径在没有成功验证的情况下被连续修改等早期失控信号，触发后向 Agent 注入“停止机械重复、重新检查假设、先做区分性诊断”的约束
 - **Genome Jobs**：A/B 消融和主动证伪作为持久化后台实验运行，服务重启后未完成实验标记为 interrupted，而不是悄悄消失
+- **ChronoForge 连续未来老化**：不是独立问多个“如果”，而是 generation N 真正继承 generation N-1 的代码，再执行下一次未来维护事件
+- **Patch Life Report**：输出 Temporal Survival、Future Maintenance Cost、Maintenance Option Value、Invariant Survival、Dependency Robustness、Patch Surface Stability 与 repo-generation Half-Life
+- **Reality-Calibrated Future Model**：真实项目后来发生的 dependency/API/schema 等事件可以通过 `chrono-observe` 回写，使用平滑后的类别权重影响后续未来场景优先级
+- **Seed Verification Replay**：如果从 Forge 候选开始老化，会保留候选原始验证命令；如果从当前 workspace 开始，会读取 `project_inspect` 推荐检查。每一代未来都重新执行，不让“未来维护成功”掩盖原功能已经死掉
+- **Temporal Death Modes**：记录代码最常在哪类未来压力下死亡，而不是只给一个总分
+- **Shadow Future Maintainers**：所有未来 Agent 都运行在 ChronoForge Shadow Workspace，GitHub/发布等远端写操作保持禁止
 - Shadow Universe 默认禁止 `git push`、`gh pr create`、`npm publish`、`cargo publish`、`mvn deploy` 等外部写操作
 - 检索安全：自动召回的项目内容会明确标记为 **UNTRUSTED PROJECT DATA**，不会被当作系统指令
 - 文件工具：列目录、全文搜索、按行读取、写文件、精确替换、单文件删除/移动、创建目录；写入/替换会返回统一 Diff
@@ -45,7 +51,7 @@
 - GitHub 原生工具：仓库元数据、目录、文件、Actions；显式开启后可建 Issue、分支、写文件、开 PR
 - General / Coder / Research 三种工作模式
 - FastAPI 后端 + 本地 Web 控制台
-- CLI：`serve` / `chat` / `forge` / `forge-list` / `forge-promote` / `genome-add` / `genome-import` / `genome-list` / `genome-ablate` / `genome-falsify` / `genome-contaminate` / `invariant-add` / `invariant-list` / `invariant-check` / `tasks` / `runs` / `resume` / `rollback` / `index` / `search` / `doctor`
+- CLI：`serve` / `chat` / `forge` / `chrono` / `chrono-list` / `chrono-show` / `chrono-observe` / `genome-add` / `genome-import` / `genome-list` / `genome-ablate` / `genome-falsify` / `genome-contaminate` / `invariant-add` / `invariant-list` / `invariant-check` / `tasks` / `runs` / `resume` / `rollback` / `index` / `search` / `doctor`
 - Web/API 可选 Bearer Token 鉴权；WebSocket 同样受保护
 - 非本机监听默认要求 Web Token；Docker Compose 默认只把 8765 发布到宿主机 loopback
 - Docker / docker compose
@@ -866,7 +872,174 @@ queued → running → completed / failed / cancelled / interrupted
 
 服务重启不会把之前还在运行的实验伪装成完成。
 
-## 16. Web / API 鉴权与远程部署
+## 16. ChronoForge：让代码在进入现实前先“活过未来”
+
+ChronoForge 的目标不是预测“2027 年 5 月一定会发生什么”，而是对一个当前实现做**前瞻式软件演化压力实验**。
+
+### 两种 Seed
+
+直接老化当前工作区：
+
+```bash
+lr-agent chrono "这个实现必须持续保持登录刷新行为"
+```
+
+也可以先让 Counterfactual Forge 产生多个真实补丁，再把某个候选送进未来：
+
+```bash
+lr-agent chrono \
+  --tournament-id <forge_tournament_id> \
+  --candidate-id <candidate_id> \
+  --generations 4 \
+  --trajectories 3
+```
+
+省略 `--candidate-id` 时使用 Forge Winner。
+
+Web UI 有 **⏳ Chrono** 按钮；Forge 完成后还会出现 **“⏳ 让胜者先活过未来”**，因此可以形成：
+
+```text
+当前 Bug
+   ↓
+Counterfactual Forge
+   ↓
+多个今天都能通过测试的 Patch
+   ↓
+ChronoForge
+   ↓
+多条连续 Future Repository Trajectory
+   ↓
+哪一个 Patch 更耐未来？
+```
+
+### 连续时间线，不是独立 Prompt
+
+假设配置：
+
+```text
+generations = 4
+trajectories = 3
+```
+
+会形成类似：
+
+```text
+Seed Patch
+├─ Timeline A
+│  ├─ g1 dependency upgrade
+│  ├─ g2 API deprecation      ← 基于 g1 的真实代码继续改
+│  ├─ g3 adjacent feature     ← 基于 g2
+│  └─ g4 schema migration
+│
+├─ Timeline B
+│  ├─ g1 API deprecation
+│  ├─ g2 adjacent feature
+│  ├─ g3 schema migration
+│  └─ g4 module refactor
+│
+└─ Timeline C
+   └─ ...
+```
+
+如果某条时间线在 g2 已经破坏 Seed 行为或 Invariant DNA，则它在 g2 “死亡”，后续代不再假装继续存活。
+
+### Future Model 场景族
+
+当前覆盖：
+
+- dependency upgrade
+- API deprecation
+- adjacent feature
+- schema migration
+- module refactor
+- platform/runtime change
+- performance pressure
+- configuration contract change
+
+模型会根据项目技术栈、manifest、Patch Surface 和原任务意图把这些场景具体化；如果场景生成失败，则回退到内置场景，不会让整个实验失效。
+
+### 每一代怎么判“活着”
+
+Future Maintainer 完成一次维护后，ChronoForge 会检查：
+
+1. Future Agent 本轮是否实际完成，Reviewer 有没有明确失败；
+2. 本轮 Agent 自己运行的测试有没有失败；
+3. Seed Patch 原始验证命令是否仍通过；
+4. active Invariant DNA 是否仍通过。
+
+任意关键约束失败，这条时间线在该 generation 被判为死亡。
+
+### Patch Life Report
+
+完成后会产生：
+
+```text
+lr-agent-chronoforge-report/v1
+```
+
+主要指标：
+
+```text
+Temporal Survival
+Future Maintenance Cost
+Maintenance Option Value
+Invariant Survival
+Dependency Robustness
+Patch Surface Stability
+Predicted Half-Life (repository generations)
+Temporal Death Modes
+```
+
+其中：
+
+```text
+Maintenance Cost
+≈ tool steps
+ + changed files × weight
+ + tool failures × weight
+ + reviewer failure penalty
+```
+
+`Maintenance Option Value` 当前是一个明确标注为 heuristic 的 survival-adjusted inverse maintenance-cost 指标。它回答的是：
+
+> 这个实现给未来维护者留下了多少低成本选择空间？
+
+它不是金融期权定价，也不是形式化的软件质量证明。
+
+### Reality-Calibrated Future Model
+
+ChronoForge 不要求未来场景权重永远固定。
+
+当真实项目几个月后真的发生变化时，可以记录：
+
+```bash
+lr-agent chrono-observe dependency_upgrade "FastAPI major version migration"
+lr-agent chrono-observe api_deprecation "old auth callback was deprecated"
+lr-agent chrono-observe schema_migration "session table added token_family"
+```
+
+系统在 `chronoforge.db` 中保存这些 Reality Observation，并用 Laplace-smoothed categorical posterior 更新未来类别权重。下一次场景池会优先安排项目历史上更常发生的未来压力。
+
+这是“现实校准”，不是声称历史频率能够完美预测未来。
+
+### 资源成本
+
+ChronoForge 的模型调用量明显高于普通 Agent。大致上限：
+
+```text
+future-maintainer runs ≈ generations × trajectories
+```
+
+默认：
+
+```env
+LR_AGENT_CHRONOFORGE_GENERATIONS=4
+LR_AGENT_CHRONOFORGE_TRAJECTORIES=3
+```
+
+即最多约 12 个 Future Maintainer Run；时间线提前死亡时会提前停止。
+
+## 17. Web / API 鉴权与远程部署
 
 本机默认访问 `127.0.0.1:8765` 时，可以保持：
 
@@ -910,7 +1083,7 @@ Docker Compose 内部需要监听 `0.0.0.0`，但默认只映射：
 
 因此宿主机默认仍是本机访问。
 
-## 17. Docker
+## 18. Docker
 
 先创建 `.env`，然后：
 
@@ -933,7 +1106,7 @@ Docker 会把：
 
 持久化到宿主机。
 
-## 18. 测试
+## 19. 测试
 
 ```bash
 pytest
@@ -969,6 +1142,10 @@ pytest
 - Proof-Carrying Gene verifier execution in Shadow candidates
 - Invariant DNA veto during Forge promotion with automatic rollback
 - Epistemic Tripwire on repeated unverified mutation loops
+- ChronoForge sequential future inheritance and seed-verification replay
+- Temporal survival curve / predicted repo-generation half-life
+- Reality Observation persistence and Future Model weight recalibration
+- Interrupted ChronoForge run recovery semantics
 - Counterfactual Universe 隔离：候选修改不触碰真实 workspace
 - Shadow Mode 外部发布/Push 防护
 - Evidence Score 的真实测试退出码计分
@@ -1025,6 +1202,17 @@ GitHub Actions 会在 Python 3.11 和 3.12 上运行同一套测试，并额外�
 | `LR_AGENT_EPISTEMIC_TRIPWIRE` | `true` | 是否启用执行失控检测 |
 | `LR_AGENT_TRIPWIRE_REPEAT_FAILURES` | `2` | 相同失败重复多少次触发 Tripwire |
 | `LR_AGENT_TRIPWIRE_REPEAT_MUTATIONS` | `3` | 同一路径未验证修改多少次触发 Tripwire |
+| `LR_AGENT_CHRONOFORGE_ENABLED` | `true` | 是否允许未来老化实验 |
+| `LR_AGENT_CHRONOFORGE_ROOT` | `./data/chronoforge` | 时间线 Shadow Workspace 存储目录 |
+| `LR_AGENT_CHRONOFORGE_DATABASE` | `./data/chronoforge.db` | Run 与 Reality Observation 数据库 |
+| `LR_AGENT_CHRONOFORGE_GENERATIONS` | `4` | 默认每条时间线未来代数 |
+| `LR_AGENT_CHRONOFORGE_TRAJECTORIES` | `3` | 默认独立未来时间线数 |
+| `LR_AGENT_CHRONOFORGE_MAX_GENERATIONS` | `10` | API/CLI 允许的最大未来代数 |
+| `LR_AGENT_CHRONOFORGE_MAX_TRAJECTORIES` | `6` | API/CLI 允许的最大时间线数 |
+| `LR_AGENT_CHRONOFORGE_SCENARIO_COUNT` | `8` | Future Model 场景池大小 |
+| `LR_AGENT_CHRONOFORGE_COST_STEP_WEIGHT` | `1.0` | 维护成本中的工具步权重 |
+| `LR_AGENT_CHRONOFORGE_COST_CHANGE_WEIGHT` | `1.5` | 每个改动文件的维护成本权重 |
+| `LR_AGENT_CHRONOFORGE_COST_FAILURE_WEIGHT` | `4.0` | 工具失败的维护成本权重 |
 | `LR_AGENT_APPROVAL_MODE` | `off` | `off / writes / all` 交互式审批范围 |
 | `LR_AGENT_APPROVAL_TIMEOUT_S` | `600` | 单次审批等待秒数 |
 | `LR_AGENT_WEB_TOKEN` | 空 | Web/API/WS 鉴权 Token |
@@ -1037,9 +1225,12 @@ GitHub Actions 会在 Python 3.11 和 3.12 上运行同一套测试，并额外�
 
 后续可以继续做：
 
-1. **Adversarial Counterexample Generator**：让 Falsifier 自动合成项目内可执行的最小反例，而不只依赖用户提供挑战任务
-2. **Gene Lifetime / Decay**：当依赖版本、代码结构或项目分布改变后，旧 Gene 自动降权并重新进入验证
-3. **Cross-Project Genome Transfer**：在严格 provenance 隔离下研究“哪些 Gene 可跨仓库迁移、哪些必须项目私有”
+1. **Chrono Tournament**：同一 Forge 中多个今天都通过的 Patch 自动进入完全相同的未来场景矩阵，用“未来维护成本 + 生存曲线”直接比较
+2. **Future Surprise / Calibration Error**：记录当初预测的未来分布和后来真实事件，计算长期 calibration error，而不只更新频率
+3. **Temporal Anti-Gene**：只在跨代反复失败后生成“未来脆弱性基因”，并与 Causal Genome 保持 provenance 隔离
+4. **Adversarial Counterexample Generator**：让 Falsifier 自动合成项目内可执行的最小反例，而不只依赖用户提供挑战任务
+5. **Gene Lifetime / Decay**：当依赖版本、代码结构或项目分布改变后，旧 Gene 自动降权并重新进入验证
+6. **Cross-Project Genome Transfer**：在严格 provenance 隔离下研究“哪些 Gene 可跨仓库迁移、哪些必须项目私有”
 4. 多工作区与项目配置文件
 5. 可配置的审批策略（按命令、路径、仓库细分）
 6. 浏览器自动化
