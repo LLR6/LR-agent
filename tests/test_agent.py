@@ -84,3 +84,57 @@ async def test_agent_executes_tool_and_returns_answer(tmp_path: Path) -> None:
     assert persisted is not None
     assert persisted["status"] == "completed"
     assert persisted["steps"][0]["tool"] == "write_file"
+
+
+class ContextAwareLLM:
+    async def chat(self, messages, tools=None, temperature=0.2):
+        context_messages = [
+            item.get("content", "")
+            for item in messages
+            if item.get("role") == "system"
+            and "Retrieved workspace context" in (item.get("content") or "")
+        ]
+        assert context_messages
+        assert "important_project_marker" in context_messages[0]
+        return {"content": "used indexed context"}
+
+
+@pytest.mark.asyncio
+async def test_agent_auto_retrieves_workspace_context(tmp_path: Path) -> None:
+    settings = Settings(
+        workspace=tmp_path / "workspace",
+        database=tmp_path / "memory.db",
+        knowledge_database=tmp_path / "knowledge.db",
+        enable_planning=False,
+        enable_review=False,
+        auto_context=True,
+    )
+    settings.ensure_dirs()
+    (settings.workspace / "project_notes.md").write_text(
+        "important_project_marker lives here",
+        encoding="utf-8",
+    )
+
+    store = MemoryStore(settings.database)
+    tools = ToolRegistry(settings)
+    tools.knowledge.rebuild()
+    agent = Agent(
+        settings,
+        ContextAwareLLM(),
+        store,
+        tools,
+    )
+
+    events = []
+
+    async def sink(event):
+        events.append(event)
+
+    response = await agent.run(
+        "important_project_marker",
+        mode="coder",
+        event_sink=sink,
+    )
+
+    assert response.answer == "used indexed context"
+    assert any(event["type"] == "context" for event in events)
