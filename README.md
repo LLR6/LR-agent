@@ -98,6 +98,16 @@ LR-Agent 不把“一次成功”直接记成长期技能。候选策略先进�
 
 > 当前版本：**1.1.0**。ChronoForge 是研究型工程原型：未来场景和 Option Value 是可审计的工程启发式，不是“能预测现实未来”的宣传口号。
 
+## 30 秒试玩（不用 clone）
+
+如果你装了 `uv`，可以直接从 GitHub 启动 CLI：
+
+```bash
+uvx --from git+https://github.com/LLR6/LR-agent.git lr-agent --help
+```
+
+进入完整功能前仍需要配置一个 OpenAI-compatible 模型；但查看 CLI、命令结构和本地 Demo 环境不需要先手动创建项目虚拟环境。
+
 ## 5 分钟开始
 
 要求 Python 3.11+。
