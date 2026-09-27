@@ -1144,6 +1144,25 @@ class ToolRegistry:
         if not self.settings.allow_destructive and any(x in joined for x in destructive):
             raise ToolError("Potentially destructive command blocked by policy.")
 
+        if self.settings.shadow_mode:
+            external_writes = (
+                "git push",
+                "gh pr create",
+                "gh issue create",
+                "gh release create",
+                "npm publish",
+                "pnpm publish",
+                "yarn npm publish",
+                "cargo publish",
+                "mvn deploy",
+                "gradle publish",
+                "gradlew publish",
+            )
+            if any(x in joined for x in external_writes):
+                raise ToolError(
+                    "External write command blocked inside counterfactual shadow workspace."
+                )
+
         safe_env_keys = {
             "PATH",
             "HOME",
