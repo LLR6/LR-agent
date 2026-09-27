@@ -31,11 +31,23 @@ class Planner:
     def __init__(self, llm: Any):
         self.llm = llm
 
-    async def create(self, user_message: str, mode: str) -> AgentPlan:
+    async def create(
+        self,
+        user_message: str,
+        mode: str,
+        context: list[dict[str, Any]] | None = None,
+    ) -> AgentPlan:
+        context_text = (
+            json.dumps(context, ensure_ascii=False)
+            if context
+            else "No indexed project context was retrieved."
+        )
         prompt = f"""Create a short execution plan for an AI agent.
 
 Mode: {mode}
 Task: {user_message}
+Indexed project context (may be stale; verify before editing):
+{context_text}
 
 Return JSON only with this exact shape:
 {{
