@@ -173,6 +173,64 @@ class ToolRegistry:
                     "required": ["repo", "title"],
                 },
             ),
+            self._spec(
+                "github_create_branch",
+                "Create a GitHub branch from an existing branch/ref. GitHub writes must be enabled.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "repo": {"type": "string", "description": "owner/name"},
+                        "branch": {"type": "string"},
+                        "base_ref": {"type": "string", "default": ""},
+                    },
+                    "required": ["repo", "branch"],
+                },
+            ),
+            self._spec(
+                "github_put_file",
+                "Create or update a UTF-8 text file through the GitHub Contents API. Read the file first and pass sha when updating an existing file.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "repo": {"type": "string", "description": "owner/name"},
+                        "path": {"type": "string"},
+                        "content": {"type": "string"},
+                        "message": {"type": "string"},
+                        "branch": {"type": "string"},
+                        "sha": {"type": "string", "default": ""},
+                    },
+                    "required": ["repo", "path", "content", "message", "branch"],
+                },
+            ),
+            self._spec(
+                "github_create_pull_request",
+                "Create a GitHub pull request from head to base. GitHub writes must be enabled.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "repo": {"type": "string", "description": "owner/name"},
+                        "title": {"type": "string"},
+                        "head": {"type": "string"},
+                        "base": {"type": "string"},
+                        "body": {"type": "string", "default": ""},
+                        "draft": {"type": "boolean", "default": False},
+                    },
+                    "required": ["repo", "title", "head", "base"],
+                },
+            ),
+            self._spec(
+                "github_list_workflow_runs",
+                "List recent GitHub Actions workflow runs for a repository.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "repo": {"type": "string", "description": "owner/name"},
+                        "branch": {"type": "string", "default": ""},
+                        "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
+                    },
+                    "required": ["repo"],
+                },
+            ),
         ]
 
     @staticmethod
@@ -216,6 +274,14 @@ class ToolRegistry:
                 value = await self._github_read_file(**arguments)
             elif name == "github_create_issue":
                 value = await self._github_create_issue(**arguments)
+            elif name == "github_create_branch":
+                value = await self._github_create_branch(**arguments)
+            elif name == "github_put_file":
+                value = await self._github_put_file(**arguments)
+            elif name == "github_create_pull_request":
+                value = await self._github_create_pull_request(**arguments)
+            elif name == "github_list_workflow_runs":
+                value = await self._github_list_workflow_runs(**arguments)
             else:
                 raise ToolError(f"Unknown tool: {name}")
             return {"ok": True, "result": value}
@@ -524,6 +590,14 @@ class ToolRegistry:
             "chars": len(text),
         }
 
+    def _ensure_github_write(self) -> None:
+        if not self.settings.allow_github_write:
+            raise ToolError(
+                "GitHub writes are disabled. Set LR_AGENT_ALLOW_GITHUB_WRITE=true to enable them."
+            )
+        if not self.settings.github_token:
+            raise ToolError("GitHub write requires LR_AGENT_GITHUB_TOKEN")
+
     async def _github_create_issue(
         self,
         repo: str,
@@ -531,12 +605,7 @@ class ToolRegistry:
         body: str = "",
     ) -> dict[str, Any]:
         repo = self._validate_repo(repo)
-        if not self.settings.allow_github_write:
-            raise ToolError(
-                "GitHub writes are disabled. Set LR_AGENT_ALLOW_GITHUB_WRITE=true to enable them."
-            )
-        if not self.settings.github_token:
-            raise ToolError("GitHub write requires LR_AGENT_GITHUB_TOKEN")
+        self._ensure_github_write()
         data = await self._github_request(
             "POST",
             f"/repos/{repo}/issues",
@@ -547,6 +616,145 @@ class ToolRegistry:
             "title": data.get("title"),
             "html_url": data.get("html_url"),
             "state": data.get("state"),
+        }
+
+    async def _github_create_branch(
+        self,
+        repo: str,
+        branch: str,
+        base_ref: str = "",
+    ) -> dict[str, Any]:
+        repo = self._validate_repo(repo)
+        self._ensure_github_write()
+        if not branch.strip():
+            raise ToolError("branch cannot be empty")
+
+        if not base_ref:
+            metadata = await self._github_request("GET", f"/repos/{repo}")
+            base_ref = str(metadata.get("default_branch") or "")
+        if not base_ref:
+            raise ToolError("Could not determine base branch")
+
+        encoded_base = quote(base_ref, safe="")
+        base = await self._github_request(
+            "GET",
+            f"/repos/{repo}/git/ref/heads/{encoded_base}",
+        )
+        sha = ((base.get("object") or {}).get("sha")) if isinstance(base, dict) else None
+        if not sha:
+            raise ToolError(f"Could not resolve base ref: {base_ref}")
+
+        data = await self._github_request(
+            "POST",
+            f"/repos/{repo}/git/refs",
+            json_body={"ref": f"refs/heads/{branch}", "sha": sha},
+        )
+        return {
+            "branch": branch,
+            "base_ref": base_ref,
+            "sha": ((data.get("object") or {}).get("sha")),
+            "ref": data.get("ref"),
+        }
+
+    async def _github_put_file(
+        self,
+        repo: str,
+        path: str,
+        content: str,
+        message: str,
+        branch: str,
+        sha: str = "",
+    ) -> dict[str, Any]:
+        repo = self._validate_repo(repo)
+        self._ensure_github_write()
+        if not path.strip("/") or not message.strip() or not branch.strip():
+            raise ToolError("path, message and branch are required")
+
+        body: dict[str, Any] = {
+            "message": message,
+            "content": base64.b64encode(content.encode("utf-8")).decode("ascii"),
+            "branch": branch,
+        }
+        if sha:
+            body["sha"] = sha
+
+        encoded_path = quote(path.strip("/"), safe="/")
+        data = await self._github_request(
+            "PUT",
+            f"/repos/{repo}/contents/{encoded_path}",
+            json_body=body,
+        )
+        commit = data.get("commit") or {}
+        item = data.get("content") or {}
+        return {
+            "path": item.get("path") or path,
+            "content_sha": item.get("sha"),
+            "commit_sha": commit.get("sha"),
+            "html_url": item.get("html_url"),
+        }
+
+    async def _github_create_pull_request(
+        self,
+        repo: str,
+        title: str,
+        head: str,
+        base: str,
+        body: str = "",
+        draft: bool = False,
+    ) -> dict[str, Any]:
+        repo = self._validate_repo(repo)
+        self._ensure_github_write()
+        data = await self._github_request(
+            "POST",
+            f"/repos/{repo}/pulls",
+            json_body={
+                "title": title,
+                "head": head,
+                "base": base,
+                "body": body,
+                "draft": draft,
+            },
+        )
+        return {
+            "number": data.get("number"),
+            "title": data.get("title"),
+            "state": data.get("state"),
+            "draft": data.get("draft"),
+            "html_url": data.get("html_url"),
+        }
+
+    async def _github_list_workflow_runs(
+        self,
+        repo: str,
+        branch: str = "",
+        limit: int = 10,
+    ) -> dict[str, Any]:
+        repo = self._validate_repo(repo)
+        query = f"?per_page={limit}"
+        if branch:
+            query += "&branch=" + quote(branch, safe="")
+        data = await self._github_request(
+            "GET",
+            f"/repos/{repo}/actions/runs{query}",
+        )
+        runs = data.get("workflow_runs", []) if isinstance(data, dict) else []
+        return {
+            "repo": repo,
+            "runs": [
+                {
+                    "id": item.get("id"),
+                    "name": item.get("name"),
+                    "display_title": item.get("display_title"),
+                    "status": item.get("status"),
+                    "conclusion": item.get("conclusion"),
+                    "head_branch": item.get("head_branch"),
+                    "head_sha": item.get("head_sha"),
+                    "event": item.get("event"),
+                    "html_url": item.get("html_url"),
+                }
+                for item in runs[:limit]
+                if isinstance(item, dict)
+            ],
         }
 
     async def _validate_public_url(self, url: str) -> None:
