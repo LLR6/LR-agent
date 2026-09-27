@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     model: str = "gpt-5.6"
 
     max_steps: int = 12
+    max_concurrent_tasks: int = 2
     enable_planning: bool = True
     enable_review: bool = True
     max_review_retries: int = 1
