@@ -386,7 +386,6 @@
       renderReview(data.review);
       refreshSessions();
       refreshRuns();
-      refreshRuns();
     } catch (e) {
       runMeta.innerHTML = '<div class="bad">恢复失败：' + esc(e.message) + '</div>';
     } finally {
@@ -473,6 +472,7 @@
       renderSteps(data.steps);
       renderReview(data.review);
       refreshSessions();
+      refreshRuns();
     } catch (e) {
       addMessage("assistant", "执行失败： " + e.message);
       steps.innerHTML = '<div class="bad">请求失败，请检查终端日志和 .env 配置。</div>';
