@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.4.0 - 2026-09-27
+
+### Added
+
+- Optional interactive approval modes: `off`, `writes`, and `all`.
+- Persistent approval records tied to background tasks.
+- WebSocket `approval_required` / `approval_resolved` events.
+- Web UI approval panel with Diff/command preview and approve/deny actions.
+- Approval decision REST API.
+- CLI y/N approval prompts for chat and run resume.
+- Approval timeout and restart expiration semantics.
+
+### Safety
+
+- Denied actions are not executed.
+- Write approvals can cover local file mutations and GitHub write tools.
+- `all` mode can additionally require approval for `run_command`.
+- Pending approvals from a previous process are expired on restart.
+
 ## 0.3.0 - 2026-09-27
 
 ### Added
