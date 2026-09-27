@@ -792,14 +792,17 @@
       );
       const data = await r.json();
       if (!r.ok) throw new Error(data.detail || "Cancel failed");
-      if (!data.cancelled) {
-        cancelTask.textContent = "已结束";
+      if (data.cancelled) {
+        activeTaskId = null;
+        cancelTask.disabled = true;
+      } else {
+        cancelTask.disabled = true;
       }
     } catch (e) {
       appendLiveOutput("stderr", "\n取消失败: " + e.message + "\n");
       cancelTask.disabled = false;
     } finally {
-      if (cancelTask.disabled) cancelTask.textContent = "取消";
+      cancelTask.textContent = "取消";
     }
   }
 
