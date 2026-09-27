@@ -2,6 +2,9 @@
 
 <p align="center"><img src="./docs/media/lr-agent-social-preview.svg" alt="LR-Agent — Code that survives tomorrow" width="100%"></p>
 
+<p align="center"><img src="./docs/media/chronoforge-showcase.gif" alt="Deterministic ChronoForge showcase — not a benchmark" width="100%"></p>
+<p align="center"><sub>Deterministic showcase for explaining the workflow; not a benchmark result.</sub></p>
+
 **A research-oriented coding agent that asks not only “does this patch work today?” — but “can it survive tomorrow?”**
 
 [中文 README](./README.md) · [v1.1.0 Release](https://github.com/LLR6/LR-agent/releases/tag/v1.1.0) · [5-minute ChronoForge demo](./docs/DEMO_CHRONOFORGE.md) · [Research](./docs/research/README.md) · [Contributing](./CONTRIBUTING.md)
