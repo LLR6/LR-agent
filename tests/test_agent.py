@@ -59,16 +59,19 @@ async def test_agent_executes_tool_and_returns_answer(tmp_path: Path) -> None:
         enable_review=True,
     )
     settings.ensure_dirs()
+    store = MemoryStore(settings.database)
     agent = Agent(
         settings,
         FakeLLM(),
-        MemoryStore(settings.database),
+        store,
         ToolRegistry(settings),
     )
 
     response = await agent.run("create a file", mode="coder")
 
     assert response.answer == "done"
+    assert response.status == "completed"
+    assert response.run_id
     assert response.plan is not None
     assert response.plan.goal == "create hello.txt"
     assert response.review is not None
@@ -76,3 +79,8 @@ async def test_agent_executes_tool_and_returns_answer(tmp_path: Path) -> None:
     assert response.steps[0].tool == "write_file"
     assert response.steps[0].ok is True
     assert (settings.workspace / "hello.txt").read_text() == "hi"
+
+    persisted = store.get_run(response.run_id)
+    assert persisted is not None
+    assert persisted["status"] == "completed"
+    assert persisted["steps"][0]["tool"] == "write_file"
