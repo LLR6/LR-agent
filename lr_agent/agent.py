@@ -37,6 +37,75 @@ class Agent:
             else None
         )
 
+    @staticmethod
+    def _verification_result(
+        name: str,
+        arguments: dict[str, Any],
+        result: dict[str, Any],
+    ) -> bool | None:
+        if name != "run_command":
+            return None
+        argv = arguments.get("argv")
+        if not isinstance(argv, list) or not argv:
+            return None
+        parts = [str(item).lower() for item in argv]
+        exe = parts[0].replace("\\", "/").split("/")[-1]
+        joined = " ".join(parts)
+        is_verification = (
+            exe in {"pytest", "ctest"}
+            or (exe in {"python", "python3"} and "-m pytest" in joined)
+            or (exe in {"npm", "pnpm", "yarn"} and "test" in parts[1:])
+            or (exe == "cargo" and "test" in parts[1:])
+            or (exe == "go" and "test" in parts[1:])
+            or (exe in {"mvn", "mvnw"} and any(x in parts[1:] for x in {"test", "verify"}))
+            or (
+                exe in {"gradle", "gradlew", "gradlew.bat"}
+                and any(x in parts[1:] for x in {"test", "check", "build"})
+            )
+        )
+        if not is_verification:
+            return None
+        payload = result.get("result") or {}
+        return bool(result.get("ok")) and payload.get("returncode") == 0
+
+    @staticmethod
+    def _mutation_paths(
+        name: str,
+        arguments: dict[str, Any],
+    ) -> list[str]:
+        if name not in {
+            "write_file",
+            "replace_in_file",
+            "delete_file",
+            "move_file",
+            "make_directory",
+        }:
+            return []
+        paths: list[str] = []
+        for key in ("path", "source", "destination"):
+            value = arguments.get(key)
+            if isinstance(value, str) and value.strip():
+                paths.append(value.strip())
+        return sorted(set(paths))
+
+    @staticmethod
+    def _failure_signature(
+        name: str,
+        arguments: dict[str, Any],
+        result: dict[str, Any],
+    ) -> str | None:
+        if not result.get("ok"):
+            error = str(result.get("error") or "tool failure")
+            return f"{name}:{error[:240]}"
+        if name == "run_command":
+            payload = result.get("result") or {}
+            returncode = payload.get("returncode")
+            if returncode not in {None, 0}:
+                argv = arguments.get("argv")
+                head = " ".join(str(x) for x in argv[:4]) if isinstance(argv, list) else ""
+                return f"run_command:{head}:rc={returncode}"
+        return None
+
     async def run(
         self,
         message: str,
@@ -226,6 +295,9 @@ class Agent:
         steps: list[AgentStep] = []
         review: ReviewReport | None = None
         review_retries = 0
+        failure_counts: dict[str, int] = {}
+        mutation_counts: dict[str, int] = {}
+        tripped_signatures: set[str] = set()
 
         for index in range(1, self.settings.max_steps + 1):
             assistant = await self.llm.chat(messages, self.tools.specs())
@@ -309,6 +381,7 @@ class Agent:
                 }
             )
 
+            pending_tripwires: list[dict[str, Any]] = []
             for tool_call in tool_calls:
                 function = tool_call.get("function") or {}
                 name = function.get("name") or ""
@@ -404,6 +477,80 @@ class Agent:
                         "role": "tool",
                         "tool_call_id": tool_call.get("id", f"call_{index}_{len(steps)}"),
                         "content": serialized[:50000],
+                    }
+                )
+
+                if self.settings.epistemic_tripwire:
+                    verification = self._verification_result(
+                        name,
+                        arguments,
+                        result,
+                    )
+                    if verification is True:
+                        mutation_counts.clear()
+
+                    failure_signature = self._failure_signature(
+                        name,
+                        arguments,
+                        result,
+                    )
+                    if failure_signature is not None:
+                        failure_counts[failure_signature] = (
+                            failure_counts.get(failure_signature, 0) + 1
+                        )
+                        if (
+                            failure_counts[failure_signature]
+                            >= max(self.settings.tripwire_repeat_failures, 1)
+                            and failure_signature not in tripped_signatures
+                        ):
+                            tripped_signatures.add(failure_signature)
+                            pending_tripwires.append(
+                                {
+                                    "reason": "repeated_failure",
+                                    "signature": failure_signature,
+                                    "count": failure_counts[failure_signature],
+                                }
+                            )
+
+                    if result.get("ok"):
+                        for path in self._mutation_paths(name, arguments):
+                            mutation_counts[path] = mutation_counts.get(path, 0) + 1
+                            signature = f"mutation:{path}"
+                            if (
+                                mutation_counts[path]
+                                >= max(self.settings.tripwire_repeat_mutations, 1)
+                                and signature not in tripped_signatures
+                            ):
+                                tripped_signatures.add(signature)
+                                pending_tripwires.append(
+                                    {
+                                        "reason": "repeated_mutation_without_verification",
+                                        "path": path,
+                                        "count": mutation_counts[path],
+                                    }
+                                )
+
+            if pending_tripwires:
+                for tripwire in pending_tripwires:
+                    await emit(
+                        {
+                            "type": "tripwire",
+                            "tripwire": tripwire,
+                            "run_id": run_id,
+                        }
+                    )
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "EPISTEMIC TRIPWIRE triggered from observable execution behavior. "
+                            "Do not keep repeating the current approach mechanically. Before the "
+                            "next mutation, re-read the relevant state, challenge the current "
+                            "hypothesis, explain the next observable check in a short tool-oriented "
+                            "way, and prefer a discriminating diagnostic or verification step. "
+                            "If evidence contradicts the plan, switch strategy. Tripwires:\n"
+                            + json.dumps(pending_tripwires, ensure_ascii=False)
+                        ),
                     }
                 )
 
