@@ -4,7 +4,7 @@
 
 **A research-oriented coding agent that asks not only “does this patch work today?” — but “can it survive tomorrow?”**
 
-[中文 README](./README.md) · [5-minute ChronoForge demo](./docs/DEMO_CHRONOFORGE.md) · [Research](./docs/research/README.md) · [Contributing](./CONTRIBUTING.md)
+[中文 README](./README.md) · [v1.1.0 Release](https://github.com/LLR6/LR-agent/releases/tag/v1.1.0) · [5-minute ChronoForge demo](./docs/DEMO_CHRONOFORGE.md) · [Research](./docs/research/README.md) · [Contributing](./CONTRIBUTING.md)
 
 ![CI](https://github.com/LLR6/LR-agent/actions/workflows/ci.yml/badge.svg)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
