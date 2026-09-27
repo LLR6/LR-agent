@@ -18,6 +18,16 @@ cli = typer.Typer(help="LR-Agent local autonomous assistant")
 console = Console()
 
 
+async def _terminal_approval(
+    tool: str,
+    arguments: dict[str, object],
+    preview: str,
+) -> bool:
+    console.print(Panel(preview or str(arguments), title=f"Approval required · {tool}"))
+    answer = console.input("[bold yellow]Approve this action? [y/N]: [/bold yellow]").strip().lower()
+    return answer in {"y", "yes"}
+
+
 def _build_agent(settings: Settings) -> Agent:
     settings.ensure_dirs()
     return Agent(
@@ -50,7 +60,12 @@ def chat(
     agent = _build_agent(settings)
 
     async def one(text: str, session_id: str | None) -> str:
-        response = await agent.run(text, session_id=session_id, mode=mode)
+        response = await agent.run(
+            text,
+            session_id=session_id,
+            mode=mode,
+            approval_handler=_terminal_approval,
+        )
         if response.steps:
             console.print(
                 Panel(
@@ -142,6 +157,7 @@ def resume(run_id: str = typer.Argument(..., help="Persisted run id")) -> None:
             prompt,
             session_id=str(item["session_id"]),
             mode=str(item["mode"]),
+            approval_handler=_terminal_approval,
         )
         console.print(Panel(response.answer, title=f"LR-Agent · {response.status}"))
         console.print(f"run_id: {response.run_id}")
