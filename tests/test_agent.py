@@ -85,6 +85,13 @@ async def test_agent_executes_tool_and_returns_answer(tmp_path: Path) -> None:
     assert persisted["status"] == "completed"
     assert persisted["steps"][0]["tool"] == "write_file"
 
+    snapshots = store.list_run_snapshots(response.run_id)
+    assert snapshots
+    hello_snapshot = next(item for item in snapshots if item["path"] == "hello.txt")
+    assert hello_snapshot["original_kind"] == "missing"
+    assert hello_snapshot["final_kind"] == "file"
+    assert hello_snapshot["final_hash"]
+
 
 class ContextAwareLLM:
     async def chat(self, messages, tools=None, temperature=0.2):
