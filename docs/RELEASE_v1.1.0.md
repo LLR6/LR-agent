@@ -83,6 +83,11 @@ lr-agent chrono "preserve the current core behavior" --generations 4 --trajector
 
 ## Demo
 
+- [▶ ChronoForge 8-second showcase MP4](https://github.com/LLR6/LR-agent/releases/download/v1.1.0/chronoforge-showcase.mp4)
+- [Animated GIF](https://github.com/LLR6/LR-agent/blob/main/docs/media/chronoforge-showcase.gif)
+
+The animation is explicitly a deterministic explanatory showcase, not a benchmark result.
+
 See:
 
 - [5-minute ChronoForge Demo](https://github.com/LLR6/LR-agent/blob/main/docs/DEMO_CHRONOFORGE.md)
