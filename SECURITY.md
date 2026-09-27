@@ -142,3 +142,23 @@ LR_AGENT_WEB_TOKEN=<strong-random-token>
 ```
 
 Only enable GitHub writes when a task actually needs them.
+
+
+## Counterfactual Forge boundaries
+
+Counterfactual Forge reduces risk by copying tracked workspace files into isolated shadow
+directories before candidate Agents run. Shadow mode blocks common remote-write commands
+such as `git push`, GitHub creation operations exposed through CLI tools, and package
+publishing/deployment commands.
+
+This is still **not a VM or kernel sandbox**. An allowlisted executable can have behaviors
+that LR-Agent cannot fully predict. For untrusted code, keep using Docker or a disposable VM.
+
+Forge promotion uses a baseline-hash conflict check before writing into the real workspace.
+After applying the selected candidate, LR-Agent can replay the candidate's recognized test
+commands in the real workspace. If those checks fail, directly promoted files are restored
+from the promotion backup.
+
+The generated Proof-Carrying Patch is an evidence bundle, not a formal mathematical proof.
+It records what changed and which executable checks passed, but it cannot prove the absence
+of all bugs or external side effects.
