@@ -10,12 +10,18 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from .agent import Agent
 from .config import Settings
+from .genome import CausalGenomeEngine, GenomeError
 from .llm import LLMError, OpenAICompatibleClient
 from .memory import MemoryStore
 from .models import (
     ApprovalDecision,
     ChatRequest,
     ChatResponse,
+    ForgeGeneImportRequest,
+    GeneAblationRequest,
+    GeneContaminateRequest,
+    GeneCreateRequest,
+    InvariantCreateRequest,
     SessionSummary,
     TaskStartResponse,
     UniversePromoteRequest,
@@ -37,6 +43,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     agent = Agent(settings, llm, memory, tools)
     task_manager = TaskManager(agent, memory)
     universe_lab = UniverseLab(settings)
+    genome = CausalGenomeEngine(
+        settings,
+        universe_lab=universe_lab,
+    )
 
     app = FastAPI(title="LR-Agent", version="0.9.0")
     web_index = Path(__file__).with_name("web") / "index.html"
@@ -217,6 +227,139 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not result.get("ok"):
             raise HTTPException(status_code=409, detail=result)
         return result
+
+    @app.get("/api/genome/stats")
+    async def genome_stats() -> dict[str, object]:
+        return genome.stats()
+
+    @app.get("/api/genome/genes")
+    async def genome_genes(
+        status: str | None = None,
+        kind: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, object]]:
+        return genome.store.list_genes(
+            status=status,
+            kind=kind,
+            limit=min(max(limit, 1), 500),
+        )
+
+    @app.post("/api/genome/genes")
+    async def create_genome_gene(
+        request: GeneCreateRequest,
+    ) -> dict[str, object]:
+        try:
+            return genome.create_gene(
+                name=request.name,
+                instruction=request.instruction,
+                applicability=request.applicability,
+                exclusions=request.exclusions,
+                verifier=request.verifier,
+                parent_ids=request.parent_ids,
+                provenance={"source": "manual_api"},
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/genome/genes/{gene_id}")
+    async def genome_gene(gene_id: str) -> dict[str, object]:
+        item = genome.store.get_gene(gene_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail="Gene not found")
+        item["evidence"] = genome.store.evidence_for_gene(gene_id, limit=200)
+        return item
+
+    @app.post("/api/genome/genes/{gene_id}/experiments")
+    async def start_genome_experiment(
+        gene_id: str,
+        request: GeneAblationRequest,
+    ) -> dict[str, object]:
+        if genome.store.get_gene(gene_id) is None:
+            raise HTTPException(status_code=404, detail="Gene not found")
+        try:
+            return genome.start_ablation(
+                gene_id,
+                request.task,
+                trials=request.trials,
+                falsification=request.falsification,
+            )
+        except (GenomeError, ValueError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.get("/api/genome/jobs")
+    async def genome_jobs(limit: int = 100) -> list[dict[str, object]]:
+        return genome.list_jobs(min(max(limit, 1), 500))
+
+    @app.get("/api/genome/jobs/{job_id}")
+    async def genome_job(job_id: str) -> dict[str, object]:
+        item = genome.get_job(job_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail="Genome experiment not found")
+        return item
+
+    @app.post("/api/genome/jobs/{job_id}/cancel")
+    async def cancel_genome_job(job_id: str) -> dict[str, object]:
+        if genome.get_job(job_id) is None:
+            raise HTTPException(status_code=404, detail="Genome experiment not found")
+        return {
+            "job_id": job_id,
+            "cancelled": await genome.cancel_job(job_id),
+        }
+
+    @app.post("/api/genome/genes/{gene_id}/contaminate")
+    async def contaminate_gene(
+        gene_id: str,
+        request: GeneContaminateRequest,
+    ) -> dict[str, object]:
+        if genome.store.get_gene(gene_id) is None:
+            raise HTTPException(status_code=404, detail="Gene not found")
+        return genome.contaminate(
+            gene_id,
+            reason=request.reason,
+            propagate=request.propagate,
+        )
+
+    @app.post("/api/universes/{tournament_id}/gene")
+    async def import_forge_gene(
+        tournament_id: str,
+        request: ForgeGeneImportRequest,
+    ) -> dict[str, object]:
+        try:
+            return genome.import_forge_winner(
+                tournament_id,
+                candidate_id=request.candidate_id,
+                parent_ids=request.parent_ids,
+            )
+        except (GenomeError, UniverseError, ValueError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.get("/api/invariants")
+    async def invariants(
+        status: str | None = "active",
+        limit: int = 200,
+    ) -> list[dict[str, object]]:
+        return genome.store.list_invariants(
+            status=status,
+            limit=min(max(limit, 1), 500),
+        )
+
+    @app.post("/api/invariants")
+    async def create_invariant(
+        request: InvariantCreateRequest,
+    ) -> dict[str, object]:
+        try:
+            return genome.register_invariant(
+                name=request.name,
+                description=request.description,
+                commands=request.commands,
+                source_gene_id=request.source_gene_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/invariants/check")
+    async def check_invariants() -> dict[str, object]:
+        return await genome.check_invariants()
 
     @app.get("/api/sessions", response_model=list[SessionSummary])
     async def sessions() -> list[dict[str, str]]:
