@@ -50,3 +50,54 @@ def test_knowledge_excludes_dependency_directories(tmp_path: Path) -> None:
 
     assert index.search("visible_marker")["results"]
     assert index.search("secret_dependency_marker")["results"] == []
+
+
+def test_hybrid_search_can_surface_semantic_match(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "network.py").write_text(
+        "def verify_packet_checksum(data):\n    return True\n",
+        encoding="utf-8",
+    )
+    (workspace / "database.py").write_text(
+        "def open_database_connection():\n    return None\n",
+        encoding="utf-8",
+    )
+
+    index = KnowledgeIndex(workspace, tmp_path / "knowledge.db")
+    index.rebuild()
+    chunks = index.embedding_inputs()
+    vectors = []
+    for item in chunks:
+        vector = [1.0, 0.0] if item["path"] == "network.py" else [0.0, 1.0]
+        vectors.append((item["id"], vector))
+    index.replace_embeddings(model="test-embed", records=vectors)
+
+    result = index.hybrid_search(
+        "validate transport integrity",
+        [1.0, 0.0],
+        model="test-embed",
+        limit=1,
+        vector_weight=1.0,
+    )
+
+    assert result["mode"].startswith("hybrid:")
+    assert result["results"][0]["path"] == "network.py"
+    assert result["results"][0]["vector_score"] > 0.99
+
+
+def test_rebuild_clears_stale_embeddings(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "a.txt").write_text("alpha", encoding="utf-8")
+
+    index = KnowledgeIndex(workspace, tmp_path / "knowledge.db")
+    index.rebuild()
+    chunk = index.embedding_inputs()[0]
+    index.replace_embeddings(model="test-embed", records=[(chunk["id"], [1.0, 0.0])])
+    assert index.stats()["embeddings"] == 1
+
+    (workspace / "a.txt").write_text("beta", encoding="utf-8")
+    index.rebuild()
+
+    assert index.stats()["embeddings"] == 0
