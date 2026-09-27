@@ -84,6 +84,38 @@ class UniversePromoteRequest(BaseModel):
     verify: bool = True
 
 
+class GeneCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    instruction: str = Field(min_length=1, max_length=10_000)
+    applicability: list[str] = []
+    exclusions: list[str] = []
+    verifier: list[dict[str, Any]] = []
+    parent_ids: list[str] = []
+
+
+class GeneAblationRequest(BaseModel):
+    task: str = Field(min_length=1, max_length=100_000)
+    trials: int = Field(default=1, ge=1, le=5)
+    falsification: bool = False
+
+
+class GeneContaminateRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=2000)
+    propagate: bool = True
+
+
+class ForgeGeneImportRequest(BaseModel):
+    candidate_id: str | None = None
+    parent_ids: list[str] = []
+
+
+class InvariantCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    description: str = Field(min_length=1, max_length=5000)
+    commands: list[dict[str, Any]]
+    source_gene_id: str | None = None
+
+
 class SessionSummary(BaseModel):
     id: str
     title: str
