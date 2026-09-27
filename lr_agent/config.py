@@ -59,6 +59,16 @@ class Settings(BaseSettings):
         ".mypy_cache,.ruff_cache,dist,build,data"
     )
 
+    genome_enabled: bool = True
+    genome_database: Path = Path("./data/genome.db")
+    genome_context_results: int = 3
+    gene_positive_lift_threshold: float = 8.0
+    gene_negative_lift_threshold: float = -8.0
+    gene_activation_min_experiments: int = 3
+    gene_activation_min_positive_rate: float = 0.67
+    gene_activation_min_average_lift: float = 8.0
+    invariants_enabled: bool = True
+
     approval_mode: str = "off"
     approval_timeout_s: float = 600.0
 
@@ -74,6 +84,7 @@ class Settings(BaseSettings):
         self.database.parent.mkdir(parents=True, exist_ok=True)
         self.knowledge_database.parent.mkdir(parents=True, exist_ok=True)
         self.universe_root.mkdir(parents=True, exist_ok=True)
+        self.genome_database.parent.mkdir(parents=True, exist_ok=True)
 
     @property
     def universe_exclude_set(self) -> set[str]:
