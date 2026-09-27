@@ -61,7 +61,7 @@ class Agent:
             try:
                 stats = self.tools.knowledge.stats()
                 if stats.get("files", 0) > 0:
-                    search = self.tools.knowledge.search(
+                    search = await self.tools.search_knowledge(
                         message,
                         limit=max(1, min(self.settings.auto_context_results, 20)),
                     )
