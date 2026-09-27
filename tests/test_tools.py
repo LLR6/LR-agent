@@ -58,3 +58,18 @@ async def test_non_allowlisted_command_is_blocked(registry: ToolRegistry) -> Non
     )
     assert result["ok"] is False
     assert "not allowlisted" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_search_files(registry: ToolRegistry) -> None:
+    await registry.execute(
+        "write_file",
+        {"path": "src/a.py", "content": "alpha\nneedle here\nomega\n"},
+    )
+    result = await registry.execute(
+        "search_files",
+        {"query": "NEEDLE", "path": "src", "glob": "*.py"},
+    )
+    assert result["ok"] is True
+    assert result["result"]["matches"][0]["path"] == "src/a.py"
+    assert result["result"]["matches"][0]["line"] == 2
