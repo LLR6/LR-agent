@@ -389,6 +389,81 @@ class UniverseLab:
         result.sort(key=lambda item: str(item.get("created_at", "")), reverse=True)
         return result[: min(max(limit, 1), 100)]
 
+    @staticmethod
+    def _normalize_strategies(
+        strategies: list[dict[str, str]],
+    ) -> list[dict[str, str]]:
+        if len(strategies) < 2 or len(strategies) > 6:
+            raise UniverseError("Custom tournaments require 2 to 6 strategies.")
+        normalized: list[dict[str, str]] = []
+        seen: set[str] = set()
+        for item in strategies:
+            candidate_id = str(item.get("id", "")).strip().lower()
+            name = str(item.get("name", "")).strip()
+            instruction = str(item.get("instruction", "")).strip()
+            if not re.fullmatch(r"[a-z0-9-]{1,80}", candidate_id):
+                raise UniverseError(f"Invalid strategy id: {candidate_id}")
+            if candidate_id in seen:
+                raise UniverseError(f"Duplicate strategy id: {candidate_id}")
+            if not name or not instruction:
+                raise UniverseError("Strategy name and instruction are required.")
+            seen.add(candidate_id)
+            normalized.append(
+                {
+                    "id": candidate_id,
+                    "name": name[:120],
+                    "instruction": instruction[:6000],
+                }
+            )
+        return normalized
+
+    async def run_strategies(
+        self,
+        task: str,
+        strategies: list[dict[str, str]],
+        *,
+        evolve: bool = False,
+    ) -> dict[str, Any]:
+        normalized = self._normalize_strategies(strategies)
+        tournament_id = self._new_tournament(
+            task,
+            strategies=normalized,
+            evolve=evolve,
+        )
+        return await self._execute_tournament(
+            tournament_id,
+            task=task,
+            strategies=normalized,
+            evolve=evolve,
+        )
+
+    def start_strategies(
+        self,
+        task: str,
+        strategies: list[dict[str, str]],
+        *,
+        evolve: bool = False,
+    ) -> dict[str, Any]:
+        normalized = self._normalize_strategies(strategies)
+        tournament_id = self._new_tournament(
+            task,
+            strategies=normalized,
+            evolve=evolve,
+        )
+        job = asyncio.create_task(
+            self._execute_tournament(
+                tournament_id,
+                task=task,
+                strategies=normalized,
+                evolve=evolve,
+            )
+        )
+        self._jobs[tournament_id] = job
+        job.add_done_callback(
+            lambda _task, tid=tournament_id: self._jobs.pop(tid, None)
+        )
+        return self.get(tournament_id)
+
     def start(
         self,
         task: str,
