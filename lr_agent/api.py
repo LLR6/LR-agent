@@ -73,10 +73,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return
 
         await websocket.accept()
-        for event in task_manager.events.history(task_id):
+        queue = task_manager.events.subscribe(task_id)
+        history = task_manager.events.history(task_id)
+        for event in history:
             await websocket.send_json(event)
 
-        queue = task_manager.events.subscribe(task_id)
         try:
             while True:
                 event = await queue.get()
