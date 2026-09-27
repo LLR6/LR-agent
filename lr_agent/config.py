@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     enable_planning: bool = True
     enable_review: bool = True
     max_review_retries: int = 1
+    enable_run_snapshots: bool = True
+    snapshot_max_file_bytes: int = 2_000_000
     request_timeout_s: float = 120.0
     model_retries: int = 2
     command_timeout_s: float = 60.0
