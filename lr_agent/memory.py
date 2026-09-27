@@ -91,6 +91,20 @@ class MemoryStore:
             ).fetchall()
         return [{"role": row["role"], "content": row["content"]} for row in rows]
 
+    def get_messages(self, session_id: str, limit: int = 200) -> list[dict[str, str]]:
+        with self._lock:
+            rows = self._conn.execute(
+                """
+                SELECT role, content, created_at
+                FROM messages
+                WHERE session_id = ?
+                ORDER BY id ASC
+                LIMIT ?
+                """,
+                (session_id, limit),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def list_sessions(self, limit: int = 50) -> list[dict[str, str]]:
         with self._lock:
             rows = self._conn.execute(
