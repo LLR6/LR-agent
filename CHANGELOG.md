@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.5.0 - 2026-09-27
+
+### Added
+
+- Bounded background task concurrency with queued-task cancellation.
+- Automatic project-context retrieval for Coder and Research modes.
+- CONTEXT events in the live execution stream and Web UI.
+- CLI commands for background tasks and project knowledge: `tasks`, `index`, `search`.
+- Optional Bearer-token authentication for REST APIs and task WebSockets.
+- Browser token handling through session-scoped storage.
+
+### Security
+
+- Retrieved project context is explicitly marked as untrusted data before it reaches
+  the planner or executor to reduce prompt-injection risk.
+- Non-loopback `lr-agent serve` bindings are refused without a Web token unless
+  the user explicitly opts into unauthenticated remote binding.
+- Docker Compose publishes the Web port on host loopback by default.
+- Docker Compose explicitly permits the service's internal `0.0.0.0` bind while
+  retaining the loopback-only host mapping.
+- Expanded SECURITY.md deployment, approval, subprocess and retrieval guidance.
+
+### Changed
+
+- Queue concurrency is configurable through `LR_AGENT_MAX_CONCURRENT_TASKS`.
+- Automatic retrieval can be configured through `LR_AGENT_AUTO_CONTEXT` and
+  `LR_AGENT_AUTO_CONTEXT_RESULTS`.
+- Package and API version updated to 0.5.0.
+
 ## 0.4.0 - 2026-09-27
 
 ### Added
