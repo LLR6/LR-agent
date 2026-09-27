@@ -45,6 +45,13 @@ class Agent:
         if self.settings.enable_planning and mode in {"coder", "research"}:
             plan = await self.planner.create(message, mode)
 
+        run_id = self.memory.start_run(
+            session_id,
+            mode=mode,
+            task=message,
+            plan=plan.model_dump() if plan is not None else None,
+        )
+
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": build_system_prompt(mode)},
             *history,
@@ -101,9 +108,22 @@ class Agent:
                         )
                         continue
 
+                status = (
+                    "completed"
+                    if review is None or review.passed
+                    else "needs_work"
+                )
+                self.memory.finish_run(
+                    run_id,
+                    answer=answer,
+                    review=review.model_dump() if review is not None else None,
+                    status=status,
+                )
                 self.memory.add_message(session_id, "assistant", answer)
                 return ChatResponse(
                     session_id=session_id,
+                    run_id=run_id,
+                    status=status,
                     answer=answer,
                     steps=steps,
                     plan=plan,
@@ -135,14 +155,21 @@ class Agent:
 
                 serialized = json.dumps(result, ensure_ascii=False)
                 preview = serialized[:800]
-                steps.append(
-                    AgentStep(
-                        index=len(steps) + 1,
-                        tool=name or "(missing tool name)",
-                        arguments=arguments,
-                        ok=bool(result.get("ok")),
-                        preview=preview,
-                    )
+                step = AgentStep(
+                    index=len(steps) + 1,
+                    tool=name or "(missing tool name)",
+                    arguments=arguments,
+                    ok=bool(result.get("ok")),
+                    preview=preview,
+                )
+                steps.append(step)
+                self.memory.add_run_step(
+                    run_id,
+                    step_index=step.index,
+                    tool=step.tool,
+                    arguments=step.arguments,
+                    ok=step.ok,
+                    preview=step.preview,
                 )
                 messages.append(
                     {
@@ -174,9 +201,17 @@ class Agent:
                 proposed_answer=answer,
             )
 
+        self.memory.finish_run(
+            run_id,
+            answer=answer,
+            review=review.model_dump() if review is not None else None,
+            status="max_steps",
+        )
         self.memory.add_message(session_id, "assistant", answer)
         return ChatResponse(
             session_id=session_id,
+            run_id=run_id,
+            status="max_steps",
             answer=answer,
             steps=steps,
             plan=plan,
