@@ -61,6 +61,24 @@ lr-agent doctor
 
 ---
 
+## Fast path
+
+After configuring `.env`, you can run the bundled demo directly.
+
+Linux/macOS:
+
+```bash
+bash scripts/demo_chronoforge.sh
+```
+
+Windows PowerShell:
+
+```powershell
+.\scripts\demo_chronoforge.ps1
+```
+
+The scripts first run the demo's current pytest suite, then start a 3-generation × 3-trajectory ChronoForge run in the demo workspace.
+
 ## 2. Inspect the demo project
 
 The example workspace is:
