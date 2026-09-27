@@ -152,6 +152,21 @@
     }
     textarea:focus { border-color: rgba(88,216,255,.55); }
     .send { height: 58px; min-width: 86px; }
+    .cancel { height: 58px; min-width: 76px; }
+    .terminal-card {
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      padding: 10px;
+      background: rgba(0,0,0,.28);
+      color: #c9e7f7;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 11px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      max-height: 260px;
+      overflow: auto;
+    }
     .trace h3 { margin: 0 0 14px; font-size: 14px; color: var(--muted); font-weight: 600; }
     .trace h3.section { margin-top: 22px; }
     .plan-card, .review-card, .approval-card {
@@ -256,6 +271,7 @@
     <div class="composer">
       <div class="compose-box">
         <textarea id="input" placeholder="例如：检查 workspace 里的 Python 项目，修复测试失败并告诉我改了什么。"></textarea>
+        <button class="cancel" id="cancelTask" disabled>取消</button>
         <button class="send primary" id="send">执行</button>
       </div>
     </div>
@@ -272,6 +288,8 @@
     <div id="plan"><div class="meta">Coder / Research 模式会先生成可验证计划。</div></div>
     <h3 class="section">EXECUTION TRACE</h3>
     <div id="steps"><div class="meta">还没有工具调用。</div></div>
+    <h3 class="section">LIVE OUTPUT</h3>
+    <div id="liveOutput" class="terminal-card">等待命令输出...</div>
     <h3 class="section">REVIEW</h3>
     <div id="review"><div class="meta">执行完成后进行结果审查。</div></div>
   </section>
@@ -281,11 +299,14 @@
   let sessionId = null;
   let authToken = sessionStorage.getItem("lr_agent_web_token") || "";
   let activeSocket = null;
+  let activeTaskId = null;
   let liveSteps = [];
   const input = document.getElementById("input");
   const send = document.getElementById("send");
+  const cancelTask = document.getElementById("cancelTask");
   const messages = document.getElementById("messages");
   const steps = document.getElementById("steps");
+  const liveOutput = document.getElementById("liveOutput");
   const runMeta = document.getElementById("runmeta");
   const approvalBox = document.getElementById("approval");
   const contextBox = document.getElementById("context");
@@ -319,6 +340,25 @@
       .replaceAll("&", "&amp;")
       .replaceAll("<", "&lt;")
       .replaceAll(">", "&gt;");
+  }
+
+  function resetLiveOutput(text = "等待命令输出...") {
+    liveOutput.textContent = text;
+  }
+
+  function appendLiveOutput(stream, text) {
+    if (!text) return;
+    if (liveOutput.textContent === "等待命令输出..." ||
+        liveOutput.textContent === "等待实时命令输出...") {
+      liveOutput.textContent = "";
+    }
+    const prefix = stream === "stderr" ? "[stderr] " : "";
+    liveOutput.textContent += prefix + text;
+    if (liveOutput.textContent.length > 30000) {
+      liveOutput.textContent = "… output truncated …\n" +
+        liveOutput.textContent.slice(-28000);
+    }
+    liveOutput.scrollTop = liveOutput.scrollHeight;
   }
 
   function addMessage(role, text) {
@@ -518,6 +558,12 @@
       const data = await r.json();
       if (!r.ok) throw new Error(data.detail || "Resume submission failed");
 
+      activeTaskId = data.task_id;
+      cancelTask.disabled = false;
+      resetLiveOutput("等待实时命令输出...");
+      activeTaskId = data.task_id;
+      cancelTask.disabled = false;
+      resetLiveOutput("等待实时命令输出...");
       runMeta.innerHTML =
         '<div class="plan-card"><b>' + esc(data.status || "queued") +
         '</b><div style="margin-top:6px">task: ' + esc(data.task_id) + '</div></div>';
@@ -592,6 +638,11 @@
       return;
     }
 
+    if (event.type === "command_output") {
+      appendLiveOutput(event.stream || "stdout", event.text || "");
+      return;
+    }
+
     if (event.type === "context") {
       renderContext(event.context || []);
       return;
@@ -637,6 +688,8 @@
 
     if (event.type === "finished" && event.result) {
       const data = event.result;
+      activeTaskId = null;
+      cancelTask.disabled = true;
       sessionId = data.session_id || sessionId;
       addMessage("assistant", data.answer || "任务结束，但没有文本结果。");
       runMeta.innerHTML =
@@ -650,6 +703,8 @@
     }
 
     if (event.type === "finished" && event.error) {
+      activeTaskId = null;
+      cancelTask.disabled = true;
       addMessage("assistant", "后台任务失败： " + event.error);
       runMeta.innerHTML = '<div class="bad">' + esc(event.status || "failed") + '</div>';
     }
@@ -726,6 +781,28 @@
     });
   }
 
+  async function cancelActiveTask() {
+    if (!activeTaskId || cancelTask.disabled) return;
+    cancelTask.disabled = true;
+    cancelTask.textContent = "取消中";
+    try {
+      const r = await apiFetch(
+        "/api/tasks/" + encodeURIComponent(activeTaskId) + "/cancel",
+        {method: "POST"}
+      );
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || "Cancel failed");
+      if (!data.cancelled) {
+        cancelTask.textContent = "已结束";
+      }
+    } catch (e) {
+      appendLiveOutput("stderr", "\n取消失败: " + e.message + "\n");
+      cancelTask.disabled = false;
+    } finally {
+      if (cancelTask.disabled) cancelTask.textContent = "取消";
+    }
+  }
+
   async function execute() {
     const text = input.value.trim();
     if (!text || send.disabled) return;
@@ -734,6 +811,7 @@
     send.disabled = true;
     send.textContent = "后台执行中";
     liveSteps = [];
+    resetLiveOutput("等待实时命令输出...");
     steps.innerHTML = '<div class="meta">等待实时工具事件...</div>';
     runMeta.innerHTML = '<div class="meta">正在提交后台任务...</div>';
     contextBox.innerHTML = '<div class="meta">正在检索项目上下文...</div>';
@@ -774,6 +852,7 @@
   }
 
   send.addEventListener("click", execute);
+  cancelTask.addEventListener("click", cancelActiveTask);
   input.addEventListener("keydown", e => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -785,6 +864,7 @@
     sessionId = null;
     messages.innerHTML = '<div class="empty" id="empty">新会话已开始。</div>';
     steps.innerHTML = '<div class="meta">还没有工具调用。</div>';
+    resetLiveOutput();
     runMeta.innerHTML = '<div class="meta">尚未开始任务。</div>';
     contextBox.innerHTML = '<div class="meta">索引后，Coder / Research 会自动检索项目上下文。</div>';
     planBox.innerHTML = '<div class="meta">Coder / Research 模式会先生成可验证计划。</div>';
