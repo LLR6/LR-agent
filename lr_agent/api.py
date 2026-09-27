@@ -3,14 +3,15 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 
 from .agent import Agent
 from .config import Settings
 from .llm import LLMError, OpenAICompatibleClient
 from .memory import MemoryStore
-from .models import ChatRequest, ChatResponse, SessionSummary
+from .models import ChatRequest, ChatResponse, SessionSummary, TaskStartResponse
+from .task_queue import TaskManager
 from .tools import ToolRegistry
 
 
@@ -22,8 +23,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     llm = OpenAICompatibleClient(settings)
     tools = ToolRegistry(settings)
     agent = Agent(settings, llm, memory, tools)
+    task_manager = TaskManager(agent, memory)
 
-    app = FastAPI(title="LR-Agent", version="0.2.0")
+    app = FastAPI(title="LR-Agent", version="0.3.0")
     web_index = Path(__file__).with_name("web") / "index.html"
 
     @app.get("/")
@@ -39,6 +41,52 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "workspace": str(settings.workspace.resolve()),
             "max_steps": settings.max_steps,
         }
+
+    @app.post("/api/tasks", response_model=TaskStartResponse)
+    async def create_task(request: ChatRequest) -> TaskStartResponse:
+        task_id = task_manager.submit(request)
+        return TaskStartResponse(task_id=task_id, status="queued")
+
+    @app.get("/api/tasks")
+    async def tasks(limit: int = 50) -> list[dict[str, object]]:
+        safe_limit = min(max(limit, 1), 200)
+        return task_manager.list(safe_limit)
+
+    @app.get("/api/tasks/{task_id}")
+    async def task_detail(task_id: str) -> dict[str, object]:
+        item = task_manager.get(task_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail="Task not found")
+        return item
+
+    @app.post("/api/tasks/{task_id}/cancel")
+    async def cancel_task(task_id: str) -> dict[str, object]:
+        if task_manager.get(task_id) is None:
+            raise HTTPException(status_code=404, detail="Task not found")
+        cancelled = await task_manager.cancel(task_id)
+        return {"task_id": task_id, "cancelled": cancelled}
+
+    @app.websocket("/ws/tasks/{task_id}")
+    async def task_events(websocket: WebSocket, task_id: str) -> None:
+        if task_manager.get(task_id) is None:
+            await websocket.close(code=4404)
+            return
+
+        await websocket.accept()
+        for event in task_manager.events.history(task_id):
+            await websocket.send_json(event)
+
+        queue = task_manager.events.subscribe(task_id)
+        try:
+            while True:
+                event = await queue.get()
+                await websocket.send_json(event)
+                if event.get("type") == "finished":
+                    break
+        except WebSocketDisconnect:
+            pass
+        finally:
+            task_manager.events.unsubscribe(task_id, queue)
 
     @app.get("/api/sessions", response_model=list[SessionSummary])
     async def sessions() -> list[dict[str, str]]:
