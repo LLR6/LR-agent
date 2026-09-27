@@ -678,7 +678,7 @@ class ToolRegistry:
     def _github_headers(self) -> dict[str, str]:
         headers = {
             "Accept": "application/vnd.github+json",
-            "User-Agent": "LR-Agent/0.2",
+            "User-Agent": "LR-Agent/0.5",
             "X-GitHub-Api-Version": "2022-11-28",
         }
         if self.settings.github_token:
@@ -981,7 +981,7 @@ class ToolRegistry:
     async def _http_get(self, url: str, max_chars: int = 30000) -> dict[str, Any]:
         current = url
         timeout = httpx.Timeout(30.0)
-        headers = {"User-Agent": "LR-Agent/0.1 (+local research agent)"}
+        headers = {"User-Agent": "LR-Agent/0.5 (+local research agent)"}
 
         async with httpx.AsyncClient(timeout=timeout, headers=headers) as client:
             for _ in range(6):
