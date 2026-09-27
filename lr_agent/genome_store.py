@@ -120,6 +120,23 @@ class GenomeStore:
 
                 CREATE INDEX IF NOT EXISTS idx_invariants_status
                     ON invariants(status, updated_at DESC);
+
+                CREATE TABLE IF NOT EXISTS genome_jobs (
+                    id TEXT PRIMARY KEY,
+                    gene_id TEXT NOT NULL,
+                    task TEXT NOT NULL,
+                    experiment_type TEXT NOT NULL,
+                    trials INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    result_json TEXT,
+                    error TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(gene_id) REFERENCES genes(id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_genome_jobs_created
+                    ON genome_jobs(created_at DESC);
                 """
             )
 
@@ -713,6 +730,110 @@ class GenomeStore:
                     invariant_id,
                 ),
             )
+
+    def mark_interrupted_jobs(self) -> int:
+        now = _now()
+        with self._lock, self._conn:
+            cursor = self._conn.execute(
+                """
+                UPDATE genome_jobs
+                SET status = 'interrupted',
+                    error = COALESCE(error, 'Service restarted before experiment finished.'),
+                    updated_at = ?
+                WHERE status IN ('queued', 'running')
+                """,
+                (now,),
+            )
+        return int(cursor.rowcount)
+
+    def create_job(
+        self,
+        *,
+        gene_id: str,
+        task: str,
+        experiment_type: str,
+        trials: int,
+    ) -> dict[str, Any]:
+        if self.get_gene(gene_id) is None:
+            raise ValueError(f"gene not found: {gene_id}")
+        job_id = uuid.uuid4().hex
+        now = _now()
+        with self._lock, self._conn:
+            self._conn.execute(
+                """
+                INSERT INTO genome_jobs(
+                    id, gene_id, task, experiment_type, trials,
+                    status, result_json, error, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, 'queued', NULL, NULL, ?, ?)
+                """,
+                (
+                    job_id,
+                    gene_id,
+                    task,
+                    experiment_type,
+                    int(trials),
+                    now,
+                    now,
+                ),
+            )
+        item = self.get_job(job_id)
+        if item is None:
+            raise RuntimeError("created genome job could not be reloaded")
+        return item
+
+    def update_job(
+        self,
+        job_id: str,
+        *,
+        status: str,
+        result: dict[str, Any] | None = None,
+        error: str | None = None,
+    ) -> None:
+        now = _now()
+        with self._lock, self._conn:
+            self._conn.execute(
+                """
+                UPDATE genome_jobs
+                SET status = ?, result_json = ?, error = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    status,
+                    json.dumps(result, ensure_ascii=False) if result is not None else None,
+                    error,
+                    now,
+                    job_id,
+                ),
+            )
+
+    def get_job(self, job_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM genome_jobs WHERE id = ?",
+                (job_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        item = dict(row)
+        item["result"] = _loads(item.pop("result_json"), None)
+        return item
+
+    def list_jobs(self, limit: int = 100) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                """
+                SELECT * FROM genome_jobs
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (min(max(limit, 1), 500),),
+            ).fetchall()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item["result"] = _loads(item.pop("result_json"), None)
+            result.append(item)
+        return result
 
     def stats(self) -> dict[str, Any]:
         with self._lock:
