@@ -5,6 +5,10 @@ services:
       - "127.0.0.1:8765:8765"
     env_file:
       - .env
+    environment:
+      # The service must bind 0.0.0.0 inside the container, but the published
+      # host port is loopback-only above. API auth still applies if WEB_TOKEN is set.
+      LR_AGENT_ALLOW_REMOTE_WITHOUT_TOKEN: "true"
     volumes:
       - ./workspace:/app/workspace
       - ./data:/app/data
