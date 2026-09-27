@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     model: str = "gpt-5.6"
 
     max_steps: int = 12
+    enable_planning: bool = True
+    enable_review: bool = True
+    max_review_retries: int = 1
     request_timeout_s: float = 120.0
     command_timeout_s: float = 60.0
 
@@ -26,6 +29,10 @@ class Settings(BaseSettings):
     allowed_commands: str = "python,python3,pytest,git,gh,pip,uv,pwd,ls,dir,find,where"
     allow_destructive: bool = False
     allow_private_network: bool = False
+
+    github_token: str = ""
+    github_api_base: str = "https://api.github.com"
+    allow_github_write: bool = False
 
     def ensure_dirs(self) -> None:
         self.workspace.mkdir(parents=True, exist_ok=True)
