@@ -5,6 +5,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from .config import Settings
+from .genome_store import GenomeStore
 from .journal import WorkspaceJournal
 from .llm import OpenAICompatibleClient
 from .memory import MemoryStore
@@ -30,6 +31,11 @@ class Agent:
         self.planner = Planner(llm)
         self.reviewer = Reviewer(llm)
         self.journal = WorkspaceJournal(settings, memory, tools)
+        self.genome = (
+            GenomeStore(settings.genome_database)
+            if settings.genome_enabled
+            else None
+        )
 
     async def run(
         self,
@@ -78,12 +84,74 @@ class Agent:
                 # Retrieval is assistive context; execution must continue if the index is stale.
                 retrieved_context = []
 
+        genome_context: dict[str, Any] = {"genes": [], "invariants": []}
+        if self.genome is not None and mode in {"coder", "research"}:
+            try:
+                genes = self.genome.search_genes(
+                    message,
+                    limit=max(1, min(self.settings.genome_context_results, 10)),
+                    active_only=True,
+                )
+                invariants = (
+                    self.genome.list_invariants(status="active", limit=100)
+                    if self.settings.invariants_enabled
+                    else []
+                )
+                genome_context = {
+                    "genes": [
+                        {
+                            "id": gene["id"],
+                            "name": gene["name"],
+                            "kind": gene["kind"],
+                            "instruction": gene["instruction"],
+                            "applicability": gene["applicability"],
+                            "exclusions": gene["exclusions"],
+                            "confidence": gene["confidence"],
+                            "average_effect": gene["average_effect"],
+                            "positive_count": gene["positive_count"],
+                            "negative_count": gene["negative_count"],
+                        }
+                        for gene in genes
+                    ],
+                    "invariants": [
+                        {
+                            "id": invariant["id"],
+                            "name": invariant["name"],
+                            "description": invariant["description"],
+                            "commands": invariant["commands"],
+                            "last_status": invariant["last_status"],
+                        }
+                        for invariant in invariants
+                    ],
+                }
+                if genome_context["genes"] or genome_context["invariants"]:
+                    await emit(
+                        {
+                            "type": "genome_context",
+                            "genome": genome_context,
+                        }
+                    )
+            except Exception:
+                genome_context = {"genes": [], "invariants": []}
+
         plan: AgentPlan | None = None
         if self.settings.enable_planning and mode in {"coder", "research"}:
+            planner_context = list(retrieved_context)
+            if genome_context["genes"] or genome_context["invariants"]:
+                planner_context.append(
+                    {
+                        "_causal_genome": genome_context,
+                        "_note": (
+                            "Strategy genes are falsifiable hypotheses, not guaranteed rules. "
+                            "Anti-genes are negative evidence. Invariant commands are explicit "
+                            "project checks that should be preserved."
+                        ),
+                    }
+                )
             plan = await self.planner.create(
                 message,
                 mode,
-                context=retrieved_context or None,
+                context=planner_context or None,
             )
             await emit({"type": "plan", "plan": plan.model_dump()})
 
@@ -106,6 +174,24 @@ class Agent:
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": build_system_prompt(mode)},
         ]
+        if genome_context["genes"] or genome_context["invariants"]:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": (
+                        "CAUSAL GENOME CONTEXT. This is internally accumulated experimental "
+                        "evidence, not an authority and not hidden reasoning. Strategy genes are "
+                        "hypotheses that earned evidence in prior counterfactual A/B experiments. "
+                        "Check applicability/exclusions against the current project before using "
+                        "them. Anti-genes encode counterexamples and should make you more cautious, "
+                        "not automatically block all work. Active Invariant DNA describes project "
+                        "properties that should remain true; when executable commands are supplied, "
+                        "use them as verification when relevant. Do not claim an invariant holds "
+                        "without evidence.\n"
+                        + json.dumps(genome_context, ensure_ascii=False)
+                    ),
+                }
+            )
         if retrieved_context:
             messages.append(
                 {
