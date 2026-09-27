@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import difflib
 import ipaddress
 import json
 import os
@@ -100,6 +101,28 @@ class ToolRegistry:
                         "expected_count": {"type": "integer", "minimum": 1, "default": 1},
                     },
                     "required": ["path", "old", "new"],
+                },
+            ),
+            self._spec(
+                "git_status",
+                "Show concise git status for a repository inside the workspace.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "cwd": {"type": "string", "default": "."},
+                    },
+                },
+            ),
+            self._spec(
+                "git_diff",
+                "Show git diff for a repository inside the workspace without changing files.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "cwd": {"type": "string", "default": "."},
+                        "staged": {"type": "boolean", "default": False},
+                        "path": {"type": "string", "default": ""},
+                    },
                 },
             ),
             self._spec(
@@ -297,6 +320,10 @@ class ToolRegistry:
                 value = self._write_file(**arguments)
             elif name == "replace_in_file":
                 value = self._replace_in_file(**arguments)
+            elif name == "git_status":
+                value = await asyncio.to_thread(self._git_status, **arguments)
+            elif name == "git_diff":
+                value = await asyncio.to_thread(self._git_diff, **arguments)
             elif name == "run_command":
                 value = await asyncio.to_thread(self._run_command, **arguments)
             elif name == "http_get":
@@ -408,18 +435,36 @@ class ToolRegistry:
             "chars": len(text),
         }
 
+    @staticmethod
+    def _text_diff(old: str, new: str, path: str, max_chars: int = 12000) -> tuple[str, bool]:
+        diff = "".join(
+            difflib.unified_diff(
+                old.splitlines(keepends=True),
+                new.splitlines(keepends=True),
+                fromfile=f"a/{path}",
+                tofile=f"b/{path}",
+            )
+        )
+        return diff[:max_chars], len(diff) > max_chars
+
     def _write_file(
         self, path: str, content: str, overwrite: bool = False
     ) -> dict[str, Any]:
         target = self._safe_path(path)
-        if target.exists() and not overwrite:
+        existed = target.exists()
+        if existed and not overwrite:
             raise ToolError(f"File already exists: {path}. Set overwrite=true to replace it.")
+        old = target.read_text(encoding="utf-8", errors="replace") if existed else ""
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
+        rel = target.relative_to(self.root).as_posix()
+        diff, diff_truncated = self._text_diff(old, content, rel)
         return {
-            "path": target.relative_to(self.root).as_posix(),
+            "path": rel,
             "chars": len(content),
-            "overwritten": overwrite,
+            "overwritten": existed,
+            "diff": diff,
+            "diff_truncated": diff_truncated,
         }
 
     def _replace_in_file(
@@ -440,10 +485,30 @@ class ToolRegistry:
             )
         updated = text.replace(old, new)
         target.write_text(updated, encoding="utf-8")
+        rel = target.relative_to(self.root).as_posix()
+        diff, diff_truncated = self._text_diff(text, updated, rel)
         return {
-            "path": target.relative_to(self.root).as_posix(),
+            "path": rel,
             "replacements": count,
+            "diff": diff,
+            "diff_truncated": diff_truncated,
         }
+
+    def _git_status(self, cwd: str = ".") -> dict[str, Any]:
+        return self._run_command(["git", "status", "--short"], cwd=cwd)
+
+    def _git_diff(
+        self,
+        cwd: str = ".",
+        staged: bool = False,
+        path: str = "",
+    ) -> dict[str, Any]:
+        argv = ["git", "diff"]
+        if staged:
+            argv.append("--cached")
+        if path:
+            argv.extend(["--", path])
+        return self._run_command(argv, cwd=cwd)
 
     def _run_command(
         self,
