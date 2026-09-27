@@ -210,6 +210,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             result = await universe_lab.promote(
                 tournament_id,
                 candidate_id=request.candidate_id,
+                verify=request.verify,
             )
         except UniverseError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
