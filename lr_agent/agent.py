@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from .config import Settings
@@ -34,7 +35,16 @@ class Agent:
         *,
         session_id: str | None = None,
         mode: str = "general",
+        event_sink: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> ChatResponse:
+        async def emit(event: dict[str, Any]) -> None:
+            if event_sink is None:
+                return
+            try:
+                await event_sink(event)
+            except Exception:
+                # Observability must never break task execution.
+                return
         if session_id is None or not self.memory.session_exists(session_id):
             session_id = self.memory.create_session(message)
 
@@ -44,12 +54,22 @@ class Agent:
         plan: AgentPlan | None = None
         if self.settings.enable_planning and mode in {"coder", "research"}:
             plan = await self.planner.create(message, mode)
+            await emit({"type": "plan", "plan": plan.model_dump()})
 
         run_id = self.memory.start_run(
             session_id,
             mode=mode,
             task=message,
             plan=plan.model_dump() if plan is not None else None,
+        )
+
+        await emit(
+            {
+                "type": "run_started",
+                "run_id": run_id,
+                "session_id": session_id,
+                "mode": mode,
+            }
         )
 
         messages: list[dict[str, Any]] = [
@@ -88,12 +108,20 @@ class Agent:
                         steps=steps,
                         proposed_answer=answer,
                     )
+                    await emit({"type": "review", "review": review.model_dump()})
                     if (
                         not review.passed
                         and review_retries < self.settings.max_review_retries
                         and review.next_actions
                     ):
                         review_retries += 1
+                        await emit(
+                            {
+                                "type": "review_retry",
+                                "attempt": review_retries,
+                                "review": review.model_dump(),
+                            }
+                        )
                         messages.append({"role": "assistant", "content": answer})
                         messages.append(
                             {
@@ -120,7 +148,7 @@ class Agent:
                     status=status,
                 )
                 self.memory.add_message(session_id, "assistant", answer)
-                return ChatResponse(
+                response = ChatResponse(
                     session_id=session_id,
                     run_id=run_id,
                     status=status,
@@ -129,6 +157,15 @@ class Agent:
                     plan=plan,
                     review=review,
                 )
+                await emit(
+                    {
+                        "type": "completed",
+                        "run_id": run_id,
+                        "status": status,
+                        "response": response.model_dump(),
+                    }
+                )
+                return response
 
             messages.append(
                 {
@@ -171,6 +208,7 @@ class Agent:
                     ok=step.ok,
                     preview=step.preview,
                 )
+                await emit({"type": "tool_step", "step": step.model_dump()})
                 messages.append(
                     {
                         "role": "tool",
@@ -200,6 +238,7 @@ class Agent:
                 steps=steps,
                 proposed_answer=answer,
             )
+            await emit({"type": "review", "review": review.model_dump()})
 
         self.memory.finish_run(
             run_id,
@@ -208,7 +247,7 @@ class Agent:
             status="max_steps",
         )
         self.memory.add_message(session_id, "assistant", answer)
-        return ChatResponse(
+        response = ChatResponse(
             session_id=session_id,
             run_id=run_id,
             status="max_steps",
@@ -217,3 +256,12 @@ class Agent:
             plan=plan,
             review=review,
         )
+        await emit(
+            {
+                "type": "completed",
+                "run_id": run_id,
+                "status": "max_steps",
+                "response": response.model_dump(),
+            }
+        )
+        return response
