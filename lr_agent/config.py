@@ -73,6 +73,18 @@ class Settings(BaseSettings):
     tripwire_repeat_failures: int = 2
     tripwire_repeat_mutations: int = 3
 
+    chronoforge_enabled: bool = True
+    chronoforge_root: Path = Path("./data/chronoforge")
+    chronoforge_database: Path = Path("./data/chronoforge.db")
+    chronoforge_generations: int = 4
+    chronoforge_trajectories: int = 3
+    chronoforge_max_generations: int = 10
+    chronoforge_max_trajectories: int = 6
+    chronoforge_scenario_count: int = 8
+    chronoforge_cost_step_weight: float = 1.0
+    chronoforge_cost_change_weight: float = 1.5
+    chronoforge_cost_failure_weight: float = 4.0
+
     approval_mode: str = "off"
     approval_timeout_s: float = 600.0
 
@@ -89,6 +101,8 @@ class Settings(BaseSettings):
         self.knowledge_database.parent.mkdir(parents=True, exist_ok=True)
         self.universe_root.mkdir(parents=True, exist_ok=True)
         self.genome_database.parent.mkdir(parents=True, exist_ok=True)
+        self.chronoforge_root.mkdir(parents=True, exist_ok=True)
+        self.chronoforge_database.parent.mkdir(parents=True, exist_ok=True)
 
     @property
     def universe_exclude_set(self) -> set[str]:
