@@ -71,6 +71,8 @@ class ToolRegistry:
                     "type": "object",
                     "properties": {
                         "path": {"type": "string"},
+                        "start_line": {"type": "integer", "minimum": 1},
+                        "end_line": {"type": "integer", "minimum": 1},
                         "max_chars": {"type": "integer", "minimum": 1, "maximum": 200000, "default": 50000},
                     },
                     "required": ["path"],
@@ -87,6 +89,41 @@ class ToolRegistry:
                         "overwrite": {"type": "boolean", "default": False},
                     },
                     "required": ["path", "content"],
+                },
+            ),
+            self._spec(
+                "delete_file",
+                "Delete one file inside the workspace. Directories cannot be deleted by this tool.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                    },
+                    "required": ["path"],
+                },
+            ),
+            self._spec(
+                "move_file",
+                "Move or rename one file inside the workspace.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "source": {"type": "string"},
+                        "destination": {"type": "string"},
+                        "overwrite": {"type": "boolean", "default": False},
+                    },
+                    "required": ["source", "destination"],
+                },
+            ),
+            self._spec(
+                "make_directory",
+                "Create a directory inside the workspace.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                    },
+                    "required": ["path"],
                 },
             ),
             self._spec(
@@ -318,6 +355,9 @@ class ToolRegistry:
             return False
         write_tools = {
             "write_file",
+            "delete_file",
+            "move_file",
+            "make_directory",
             "replace_in_file",
             "github_create_issue",
             "github_create_branch",
@@ -341,6 +381,31 @@ class ToolRegistry:
             diff, truncated = self._text_diff(old, content, path)
             suffix = "\n[diff truncated]" if truncated else ""
             return (diff or f"Create or replace {path} ({len(content)} chars)") + suffix
+
+        if name == "delete_file":
+            path = str(arguments.get("path", ""))
+            target = self._safe_path(path)
+            if target.is_file():
+                old = target.read_text(encoding="utf-8", errors="replace")
+                diff, truncated = self._text_diff(old, "", path)
+                suffix = "\n[diff truncated]" if truncated else ""
+                return (diff or f"Delete file {path}") + suffix
+            return f"Delete file {path}"
+
+        if name == "move_file":
+            return json.dumps(
+                {
+                    "action": "move_file",
+                    "source": arguments.get("source"),
+                    "destination": arguments.get("destination"),
+                    "overwrite": bool(arguments.get("overwrite", False)),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+
+        if name == "make_directory":
+            return f"Create directory: {arguments.get('path', '')}"
 
         if name == "replace_in_file":
             path = str(arguments.get("path", ""))
@@ -398,6 +463,12 @@ class ToolRegistry:
                 value = self._read_file(**arguments)
             elif name == "write_file":
                 value = self._write_file(**arguments)
+            elif name == "delete_file":
+                value = self._delete_file(**arguments)
+            elif name == "move_file":
+                value = self._move_file(**arguments)
+            elif name == "make_directory":
+                value = self._make_directory(**arguments)
             elif name == "replace_in_file":
                 value = self._replace_in_file(**arguments)
             elif name == "project_inspect":
@@ -508,16 +579,41 @@ class ToolRegistry:
 
         return {"matches": matches, "scanned_files": scanned, "truncated": False}
 
-    def _read_file(self, path: str, max_chars: int = 50000) -> dict[str, Any]:
+    def _read_file(
+        self,
+        path: str,
+        start_line: int | None = None,
+        end_line: int | None = None,
+        max_chars: int = 50000,
+    ) -> dict[str, Any]:
         target = self._safe_path(path)
         if not target.is_file():
             raise ToolError(f"Not a file: {path}")
         text = target.read_text(encoding="utf-8", errors="replace")
+        lines = text.splitlines(keepends=True)
+
+        if start_line is not None or end_line is not None:
+            start = (start_line or 1) - 1
+            end = end_line if end_line is not None else len(lines)
+            if end < start + 1:
+                raise ToolError("end_line must be greater than or equal to start_line")
+            selected = "".join(lines[start:end])
+            actual_start = start + 1
+            actual_end = min(end, len(lines))
+        else:
+            selected = text
+            actual_start = 1
+            actual_end = len(lines)
+
         return {
             "path": target.relative_to(self.root).as_posix(),
-            "content": text[:max_chars],
-            "truncated": len(text) > max_chars,
-            "chars": len(text),
+            "content": selected[:max_chars],
+            "truncated": len(selected) > max_chars,
+            "chars": len(selected),
+            "total_chars": len(text),
+            "line_start": actual_start,
+            "line_end": actual_end,
+            "total_lines": len(lines),
         }
 
     def _project_inspect(self, path: str = ".") -> dict[str, Any]:
@@ -651,6 +747,56 @@ class ToolRegistry:
             "overwritten": existed,
             "diff": diff,
             "diff_truncated": diff_truncated,
+        }
+
+    def _delete_file(self, path: str) -> dict[str, Any]:
+        target = self._safe_path(path)
+        if not target.exists():
+            raise ToolError(f"File does not exist: {path}")
+        if not target.is_file():
+            raise ToolError("delete_file only deletes files, not directories")
+        size = target.stat().st_size
+        rel = target.relative_to(self.root).as_posix()
+        target.unlink()
+        return {"path": rel, "deleted": True, "bytes": size}
+
+    def _move_file(
+        self,
+        source: str,
+        destination: str,
+        overwrite: bool = False,
+    ) -> dict[str, Any]:
+        src = self._safe_path(source)
+        dst = self._safe_path(destination)
+        if not src.exists() or not src.is_file():
+            raise ToolError(f"Source is not a file: {source}")
+        if dst.exists() and not overwrite:
+            raise ToolError(
+                f"Destination already exists: {destination}. Set overwrite=true to replace it."
+            )
+        if dst.exists() and dst.is_dir():
+            raise ToolError("Destination is a directory")
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        if dst.exists():
+            dst.unlink()
+        src_rel = src.relative_to(self.root).as_posix()
+        dst_rel = dst.relative_to(self.root).as_posix()
+        shutil.move(str(src), str(dst))
+        return {
+            "source": src_rel,
+            "destination": dst_rel,
+            "moved": True,
+        }
+
+    def _make_directory(self, path: str) -> dict[str, Any]:
+        target = self._safe_path(path)
+        existed = target.exists()
+        if existed and not target.is_dir():
+            raise ToolError(f"Path exists and is not a directory: {path}")
+        target.mkdir(parents=True, exist_ok=True)
+        return {
+            "path": target.relative_to(self.root).as_posix(),
+            "created": not existed,
         }
 
     def _replace_in_file(
