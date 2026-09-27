@@ -93,6 +93,16 @@ The resulting Patch Life Report includes:
 
 ChronoForge is an experimental stress-testing system, **not a literal future predictor**.
 
+## 30-second try (no clone)
+
+If you have `uv` installed, you can launch the CLI directly from GitHub:
+
+```bash
+uvx --from git+https://github.com/LLR6/LR-agent.git lr-agent --help
+```
+
+Full Agent runs still require an OpenAI-compatible model configuration, but this removes the clone/venv/setup friction for a first look.
+
 ## Quick start
 
 Python 3.11+ is required.
