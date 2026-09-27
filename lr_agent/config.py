@@ -47,7 +47,6 @@ class Settings(BaseSettings):
         self.knowledge_database.parent.mkdir(parents=True, exist_ok=True)
 
     @property
-    @property
     def normalized_approval_mode(self) -> str:
         mode = self.approval_mode.strip().lower()
         if mode not in {"off", "writes", "all"}:
