@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconn
 from fastapi.responses import FileResponse, JSONResponse
 
 from .agent import Agent
+from .chronoforge import ChronoForge, ChronoForgeError
 from .config import Settings
 from .genome import CausalGenomeEngine, GenomeError
 from .llm import LLMError, OpenAICompatibleClient
@@ -17,10 +18,13 @@ from .models import (
     ApprovalDecision,
     ChatRequest,
     ChatResponse,
+    ChronoForgeStartRequest,
+    ChronoForgeStartResponse,
     ForgeGeneImportRequest,
     GeneAblationRequest,
     GeneContaminateRequest,
     GeneCreateRequest,
+    FutureObservationRequest,
     InvariantCreateRequest,
     SessionSummary,
     TaskStartResponse,
@@ -44,6 +48,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     task_manager = TaskManager(agent, memory)
     universe_lab = UniverseLab(settings)
     genome = CausalGenomeEngine(
+        settings,
+        universe_lab=universe_lab,
+    )
+    chronoforge = ChronoForge(
         settings,
         universe_lab=universe_lab,
     )
@@ -185,6 +193,62 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=400, detail="q cannot be empty")
         safe_limit = min(max(limit, 1), 50)
         return await tools.search_knowledge(q, safe_limit)
+
+    @app.post("/api/chronoforge", response_model=ChronoForgeStartResponse)
+    async def start_chronoforge(
+        request: ChronoForgeStartRequest,
+    ) -> ChronoForgeStartResponse:
+        try:
+            item = chronoforge.start(
+                task=request.task,
+                tournament_id=request.tournament_id,
+                candidate_id=request.candidate_id,
+                generations=request.generations,
+                trajectories=request.trajectories,
+            )
+        except (ChronoForgeError, UniverseError, ValueError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return ChronoForgeStartResponse(
+            run_id=str(item["id"]),
+            status=str(item["status"]),
+        )
+
+    @app.get("/api/chronoforge")
+    async def chronoforge_runs(limit: int = 100) -> list[dict[str, object]]:
+        return chronoforge.list(min(max(limit, 1), 500))
+
+    @app.get("/api/chronoforge/calibration")
+    async def chronoforge_calibration() -> dict[str, object]:
+        return chronoforge.calibration()
+
+    @app.post("/api/chronoforge/observations")
+    async def chronoforge_observation(
+        request: FutureObservationRequest,
+    ) -> dict[str, object]:
+        try:
+            return chronoforge.observe_future(
+                category=request.category,
+                note=request.note,
+                source=request.source,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/chronoforge/{run_id}")
+    async def chronoforge_run(run_id: str) -> dict[str, object]:
+        item = chronoforge.get(run_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail="ChronoForge run not found")
+        return item
+
+    @app.post("/api/chronoforge/{run_id}/cancel")
+    async def cancel_chronoforge(run_id: str) -> dict[str, object]:
+        if chronoforge.get(run_id) is None:
+            raise HTTPException(status_code=404, detail="ChronoForge run not found")
+        return {
+            "run_id": run_id,
+            "cancelled": await chronoforge.cancel(run_id),
+        }
 
     @app.post("/api/universes", response_model=UniverseStartResponse)
     async def start_universe_tournament(
