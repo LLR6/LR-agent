@@ -51,6 +51,10 @@ async def test_counterfactual_tournament_is_isolated_and_promotes_winner(
     workspace.mkdir()
     source = workspace / "app.py"
     source.write_text("value = 'original'\n", encoding="utf-8")
+    (workspace / "test_app.py").write_text(
+        "import app\n\ndef test_value():\n    assert app.value == 'surgical-fix'\n",
+        encoding="utf-8",
+    )
 
     settings = Settings(
         workspace=workspace,
@@ -80,6 +84,9 @@ async def test_counterfactual_tournament_is_isolated_and_promotes_winner(
     promoted = await lab.promote(tournament["id"])
     assert promoted["ok"] is True
     assert promoted["candidate_id"] == "surgical"
+    assert promoted["verification"]["passed"] is True
+    assert promoted["proof_sha256"]
+    assert Path(promoted["proof_path"]).is_file()
     assert source.read_text(encoding="utf-8") == "value = 'surgical-fix'\n"
 
 
@@ -91,6 +98,10 @@ async def test_promotion_refuses_to_overwrite_post_tournament_changes(
     workspace.mkdir()
     source = workspace / "app.py"
     source.write_text("value = 'original'\n", encoding="utf-8")
+    (workspace / "test_app.py").write_text(
+        "import app\n\ndef test_value():\n    assert app.value == 'surgical-fix'\n",
+        encoding="utf-8",
+    )
 
     settings = Settings(
         workspace=workspace,
@@ -133,3 +144,69 @@ async def test_shadow_mode_blocks_remote_git_push(tmp_path: Path) -> None:
 
     assert result["ok"] is False
     assert "External write command blocked" in result["error"]
+
+
+async def fake_bad_runner(settings: Settings, prompt: str) -> ChatResponse:
+    target = settings.workspace / "app.py"
+    if "Surgical Minimalist" in prompt:
+        target.write_text("value = 'broken-shadow-claim'\n", encoding="utf-8")
+        steps = [
+            AgentStep(
+                index=1,
+                tool="run_command",
+                arguments={"argv": ["pytest"]},
+                ok=True,
+                preview='{"ok":true,"result":{"returncode":0,"stdout":"claimed pass"}}',
+            )
+        ]
+    else:
+        target.write_text("value = 'alternate-fix'\n", encoding="utf-8")
+        steps = []
+
+    return ChatResponse(
+        session_id="session",
+        run_id="run",
+        status="completed",
+        answer="candidate answer",
+        steps=steps,
+        plan=None,
+        review=ReviewReport(
+            passed=True,
+            summary="shadow reviewer accepted",
+            problems=[],
+            next_actions=[],
+        ),
+    )
+
+
+@pytest.mark.asyncio
+async def test_proof_carrying_promotion_rolls_back_when_real_verification_fails(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    source = workspace / "app.py"
+    source.write_text("value = 'original'\n", encoding="utf-8")
+    (workspace / "test_app.py").write_text(
+        "import app\n\ndef test_value():\n    assert app.value == 'surgical-fix'\n",
+        encoding="utf-8",
+    )
+
+    settings = Settings(
+        workspace=workspace,
+        database=tmp_path / "memory.db",
+        knowledge_database=tmp_path / "knowledge.db",
+        universe_root=tmp_path / "universes",
+        universe_candidates=2,
+    )
+    settings.ensure_dirs()
+    lab = UniverseLab(settings, agent_runner=fake_bad_runner)
+    tournament = await lab.run("fix app", candidates=2, evolve=False)
+
+    assert tournament["winner_id"] == "surgical"
+    promoted = await lab.promote(tournament["id"])
+
+    assert promoted["ok"] is False
+    assert promoted["rolled_back"] is True
+    assert promoted["verification"]["passed"] is False
+    assert source.read_text(encoding="utf-8") == "value = 'original'\n"
