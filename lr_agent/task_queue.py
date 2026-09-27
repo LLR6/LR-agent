@@ -83,25 +83,7 @@ class TaskManager:
         return task_id
 
     async def _execute(self, task_id: str, request: ChatRequest) -> None:
-        await self.events.publish(
-            task_id,
-            {
-                "type": "status",
-                "task_id": task_id,
-                "status": "queued",
-            },
-        )
-
-        await self._semaphore.acquire()
-        self.memory.update_task_record(task_id, status="running")
-        await self.events.publish(
-            task_id,
-            {
-                "type": "status",
-                "task_id": task_id,
-                "status": "running",
-            },
-        )
+        acquired = False
 
         async def event_sink(event: dict[str, Any]) -> None:
             payload = dict(event)
@@ -121,6 +103,28 @@ class TaskManager:
             )
 
         try:
+            await self.events.publish(
+                task_id,
+                {
+                    "type": "status",
+                    "task_id": task_id,
+                    "status": "queued",
+                },
+            )
+
+            await self._semaphore.acquire()
+            acquired = True
+
+            self.memory.update_task_record(task_id, status="running")
+            await self.events.publish(
+                task_id,
+                {
+                    "type": "status",
+                    "task_id": task_id,
+                    "status": "running",
+                },
+            )
+
             response: ChatResponse = await self.agent.run(
                 request.message,
                 session_id=request.session_id,
@@ -179,7 +183,8 @@ class TaskManager:
             )
         finally:
             self._tasks.pop(task_id, None)
-            self._semaphore.release()
+            if acquired:
+                self._semaphore.release()
 
     async def request_approval(
         self,
