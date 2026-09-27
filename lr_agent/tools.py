@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import difflib
+import hashlib
 import json
 import ipaddress
 import os
@@ -28,6 +29,7 @@ class ToolRegistry:
         self.settings = settings
         self.root = settings.workspace.resolve()
         self.root.mkdir(parents=True, exist_ok=True)
+        self.mutation_lock = asyncio.Lock()
         self.knowledge = KnowledgeIndex(
             self.root,
             settings.knowledge_database,
@@ -348,6 +350,172 @@ class ToolRegistry:
                 "parameters": parameters,
             },
         }
+
+    LOCAL_MUTATION_TOOLS = {
+        "write_file",
+        "delete_file",
+        "move_file",
+        "make_directory",
+        "replace_in_file",
+    }
+
+    def is_local_mutation(self, name: str) -> bool:
+        return name in self.LOCAL_MUTATION_TOOLS
+
+    def _relative(self, path: Path) -> str:
+        return path.relative_to(self.root).as_posix()
+
+    def _missing_parent_paths(self, target: Path) -> list[str]:
+        missing: list[Path] = []
+        current = target.parent
+        while current != self.root and not current.exists():
+            if self.root not in current.parents:
+                break
+            missing.append(current)
+            current = current.parent
+        return [self._relative(path) for path in reversed(missing)]
+
+    def mutation_snapshot_paths(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+    ) -> list[str]:
+        if name not in self.LOCAL_MUTATION_TOOLS:
+            return []
+
+        paths: list[str] = []
+        if name in {"write_file", "replace_in_file", "delete_file"}:
+            target = self._safe_path(str(arguments.get("path", "")))
+            if name == "write_file":
+                paths.extend(self._missing_parent_paths(target))
+            paths.append(self._relative(target))
+        elif name == "make_directory":
+            target = self._safe_path(str(arguments.get("path", "")))
+            paths.extend(self._missing_parent_paths(target))
+            paths.append(self._relative(target))
+        elif name == "move_file":
+            source = self._safe_path(str(arguments.get("source", "")))
+            destination = self._safe_path(str(arguments.get("destination", "")))
+            paths.append(self._relative(source))
+            paths.extend(self._missing_parent_paths(destination))
+            paths.append(self._relative(destination))
+
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for path in paths:
+            if path not in seen:
+                seen.add(path)
+                deduped.append(path)
+        return deduped
+
+    def capture_path_snapshot(
+        self,
+        path: str,
+        *,
+        max_file_bytes: int,
+    ) -> dict[str, Any]:
+        target = self._safe_path(path)
+        if not target.exists():
+            return {
+                "path": path,
+                "kind": "missing",
+                "content": None,
+                "mode": None,
+                "hash": None,
+            }
+
+        stat_result = target.stat()
+        mode = stat_result.st_mode & 0o7777
+        if target.is_dir():
+            return {
+                "path": path,
+                "kind": "dir",
+                "content": None,
+                "mode": mode,
+                "hash": None,
+            }
+        if not target.is_file():
+            raise ToolError(f"Unsupported snapshot path type: {path}")
+        if stat_result.st_size > max_file_bytes:
+            raise ToolError(
+                f"Refusing mutation because rollback snapshot for '{path}' is "
+                f"{stat_result.st_size} bytes, above LR_AGENT_SNAPSHOT_MAX_FILE_BYTES="
+                f"{max_file_bytes}."
+            )
+        content = target.read_bytes()
+        return {
+            "path": path,
+            "kind": "file",
+            "content": content,
+            "mode": mode,
+            "hash": hashlib.sha256(content).hexdigest(),
+        }
+
+    def current_path_state(self, path: str) -> dict[str, Any]:
+        target = self._safe_path(path)
+        if not target.exists():
+            return {"path": path, "kind": "missing", "hash": None}
+        if target.is_dir():
+            return {"path": path, "kind": "dir", "hash": None}
+        if not target.is_file():
+            return {"path": path, "kind": "other", "hash": None}
+        digest = hashlib.sha256()
+        with target.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return {"path": path, "kind": "file", "hash": digest.hexdigest()}
+
+    def restore_path_snapshot(self, snapshot: dict[str, Any]) -> None:
+        path = str(snapshot["path"])
+        target = self._safe_path(path)
+        original_kind = str(snapshot["original_kind"])
+
+        if original_kind == "missing":
+            if target.is_file():
+                target.unlink()
+            elif target.is_dir():
+                try:
+                    target.rmdir()
+                except OSError as exc:
+                    raise ToolError(
+                        f"Cannot remove non-empty directory during rollback: {path}"
+                    ) from exc
+            elif target.exists():
+                raise ToolError(f"Unsupported rollback target type: {path}")
+            return
+
+        if original_kind == "dir":
+            if target.is_file():
+                target.unlink()
+            elif target.exists() and not target.is_dir():
+                raise ToolError(f"Unsupported rollback target type: {path}")
+            target.mkdir(parents=True, exist_ok=True)
+            mode = snapshot.get("original_mode")
+            if mode is not None:
+                target.chmod(int(mode))
+            return
+
+        if original_kind == "file":
+            if target.is_dir():
+                try:
+                    target.rmdir()
+                except OSError as exc:
+                    raise ToolError(
+                        f"Cannot replace non-empty directory during rollback: {path}"
+                    ) from exc
+            elif target.exists() and not target.is_file():
+                raise ToolError(f"Unsupported rollback target type: {path}")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            content = snapshot.get("original_content")
+            if content is None:
+                content = b""
+            target.write_bytes(bytes(content))
+            mode = snapshot.get("original_mode")
+            if mode is not None:
+                target.chmod(int(mode))
+            return
+
+        raise ToolError(f"Unknown snapshot kind for {path}: {original_kind}")
 
     def _requires_approval(self, name: str) -> bool:
         mode = self.settings.normalized_approval_mode
