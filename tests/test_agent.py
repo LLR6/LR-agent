@@ -146,3 +146,89 @@ async def test_agent_auto_retrieves_workspace_context(tmp_path: Path) -> None:
 
     assert response.answer == "used indexed context"
     assert any(event["type"] == "context" for event in events)
+
+
+class TripwireLLM:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def chat(self, messages, tools=None, temperature=0.2):
+        self.calls += 1
+        if self.calls == 1:
+            return {
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "tw_1",
+                        "type": "function",
+                        "function": {
+                            "name": "write_file",
+                            "arguments": (
+                                '{"path":"loop.txt","content":"first","overwrite":true}'
+                            ),
+                        },
+                    }
+                ],
+            }
+        if self.calls == 2:
+            return {
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "tw_2",
+                        "type": "function",
+                        "function": {
+                            "name": "write_file",
+                            "arguments": (
+                                '{"path":"loop.txt","content":"second","overwrite":true}'
+                            ),
+                        },
+                    }
+                ],
+            }
+        assert any(
+            "EPISTEMIC TRIPWIRE" in (item.get("content") or "")
+            for item in messages
+            if item.get("role") == "user"
+        )
+        return {"content": "reconsidered after tripwire"}
+
+
+@pytest.mark.asyncio
+async def test_epistemic_tripwire_interrupts_repeated_unverified_mutation_loop(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(
+        workspace=tmp_path / "workspace",
+        database=tmp_path / "memory.db",
+        genome_database=tmp_path / "genome.db",
+        enable_planning=False,
+        enable_review=False,
+        epistemic_tripwire=True,
+        tripwire_repeat_mutations=2,
+        max_steps=4,
+    )
+    settings.ensure_dirs()
+    store = MemoryStore(settings.database)
+    agent = Agent(
+        settings,
+        TripwireLLM(),
+        store,
+        ToolRegistry(settings),
+    )
+    events = []
+
+    async def sink(event):
+        events.append(event)
+
+    response = await agent.run(
+        "keep changing the same file",
+        mode="coder",
+        event_sink=sink,
+    )
+
+    assert response.answer == "reconsidered after tripwire"
+    tripwires = [event for event in events if event["type"] == "tripwire"]
+    assert tripwires
+    assert tripwires[0]["tripwire"]["reason"] == "repeated_mutation_without_verification"
+    assert tripwires[0]["tripwire"]["path"] == "loop.txt"
