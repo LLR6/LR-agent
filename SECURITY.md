@@ -97,6 +97,21 @@ LR-Agent marks retrieved context as untrusted and tells the model to use it only
 as project evidence. You should still use approval mode for sensitive workflows
 and review Diffs before allowing writes.
 
+## Run rollback boundaries
+
+LR-Agent can snapshot and roll back direct file-tool mutations. Before rollback,
+it compares the current path type/hash with the final state recorded by the run.
+If anything changed after that run, rollback is refused without modifying files.
+
+This mechanism does **not** roll back arbitrary command side effects. Commands,
+package managers, build systems, Git hooks and external processes can modify files
+outside the journal. Use Git, containers/VM snapshots or another system-level
+backup when those side effects matter.
+
+The automatic snapshot file-size limit is controlled by
+`LR_AGENT_SNAPSHOT_MAX_FILE_BYTES`. A direct mutation can be refused when LR-Agent
+cannot first create the configured rollback snapshot.
+
 ## Secrets
 
 Never commit:
