@@ -234,10 +234,16 @@ class Agent:
                     result = {"ok": False, "error": f"Invalid tool arguments: {exc}"}
                     arguments = {"_raw": raw_arguments}
                 else:
+                    async def tool_event(event: dict[str, Any]) -> None:
+                        payload = dict(event)
+                        payload.setdefault("tool", name)
+                        await emit(payload)
+
                     result = await self.tools.execute(
                         name,
                         arguments,
                         approval_handler=approval_handler,
+                        event_handler=tool_event,
                     )
 
                 serialized = json.dumps(result, ensure_ascii=False)
