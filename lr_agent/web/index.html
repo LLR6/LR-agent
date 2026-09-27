@@ -154,6 +154,25 @@
     .send { height: 58px; min-width: 86px; }
     .cancel { height: 58px; min-width: 76px; }
     .forge { height: 58px; min-width: 96px; }
+    .chrono { height: 58px; min-width: 104px; }
+    .survival-row {
+      display: grid;
+      grid-template-columns: 34px 1fr 42px;
+      gap: 7px;
+      align-items: center;
+      margin-top: 6px;
+      font-size: 11px;
+    }
+    .survival-track {
+      height: 7px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.06);
+      overflow: hidden;
+    }
+    .survival-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+    }
     .forge-card {
       border: 1px solid var(--line);
       border-radius: 11px;
@@ -287,6 +306,7 @@
     <div class="composer">
       <div class="compose-box">
         <textarea id="input" placeholder="例如：检查 workspace 里的 Python 项目，修复测试失败并告诉我改了什么。"></textarea>
+        <button class="chrono" id="chronoTask">⏳ Chrono</button>
         <button class="forge" id="forgeTask">⚡ Forge</button>
         <button class="cancel" id="cancelTask" disabled>取消</button>
         <button class="send primary" id="send">执行</button>
@@ -295,7 +315,9 @@
   </main>
 
   <section class="trace">
-    <h3>COUNTERFACTUAL FORGE</h3>
+    <h3>CHRONOFORGE</h3>
+    <div id="chronoPanel"><div class="meta">ChronoForge 会让当前代码或 Forge 胜者在多条连续未来时间线中老化，再测存活曲线与维护成本。</div></div>
+    <h3 class="section">COUNTERFACTUAL FORGE</h3>
     <div id="forgePanel"><div class="meta">Forge 会让多个隔离 Agent 用不同策略解决同一任务，再按真实验证证据比较。</div></div>
     <h3 class="section">CAUSAL GENOME</h3>
     <div id="genomePanel"><div class="meta">正在读取策略基因、反基因和 Invariant DNA...</div></div>
@@ -326,15 +348,18 @@
   let liveSteps = [];
   let activeForgeId = null;
   let activeGenomeJobId = null;
+  let activeChronoId = null;
   const input = document.getElementById("input");
   const send = document.getElementById("send");
   const forgeTask = document.getElementById("forgeTask");
+  const chronoTask = document.getElementById("chronoTask");
   const cancelTask = document.getElementById("cancelTask");
   const messages = document.getElementById("messages");
   const steps = document.getElementById("steps");
   const liveOutput = document.getElementById("liveOutput");
   const runMeta = document.getElementById("runmeta");
   const forgePanel = document.getElementById("forgePanel");
+  const chronoPanel = document.getElementById("chronoPanel");
   const genomePanel = document.getElementById("genomePanel");
   const tripwirePanel = document.getElementById("tripwirePanel");
   const approvalBox = document.getElementById("approval");
@@ -369,6 +394,144 @@
       .replaceAll("&", "&amp;")
       .replaceAll("<", "&lt;")
       .replaceAll(">", "&gt;");
+  }
+
+  function renderSurvivalCurve(curve) {
+    return (curve || []).map(point => {
+      const value = Math.max(0, Math.min(1, Number(point.survival_rate || 0)));
+      return '<div class="survival-row">' +
+        '<span>g' + esc(point.generation) + '</span>' +
+        '<div class="survival-track"><div class="survival-fill" style="width:' +
+        Math.round(value * 100) + '%"></div></div>' +
+        '<span>' + Math.round(value * 100) + '%</span></div>';
+    }).join("");
+  }
+
+  function renderChrono(item) {
+    if (!item) {
+      chronoPanel.innerHTML = '<div class="meta">没有 ChronoForge 运行。</div>';
+      return;
+    }
+    const report = item.report || {};
+    if (item.status !== "completed") {
+      const completed = Number(report.completed_generations || 0);
+      const total = Number(report.total_generations || 0);
+      chronoPanel.innerHTML =
+        '<div class="forge-card"><b>Temporal Aging · ' + esc(item.status) + '</b>' +
+        '<div style="margin-top:6px">run: ' + esc(item.id || "") + '</div>' +
+        '<div>' + esc(completed) + ' / ' + esc(total || "?") + ' future generations</div>' +
+        (report.last_result
+          ? '<div style="margin-top:7px">' + esc(report.last_result.scenario?.name || "") +
+            ' · survived=' + esc(report.last_result.survived) + '</div>'
+          : '') +
+        (item.error ? '<div class="bad">' + esc(item.error) + '</div>' : '') +
+        '</div>';
+      return;
+    }
+
+    const metrics = report.metrics || {};
+    const half = metrics.predicted_half_life || {};
+    const halfText = half.censored
+      ? ">" + esc(half.generation)
+      : esc(half.generation ?? "-");
+    chronoPanel.innerHTML =
+      '<div class="forge-card winner"><b>PATCH LIFE REPORT</b>' +
+      '<div class="forge-score">' +
+      Math.round(Number(metrics.temporal_survival || 0) * 100) + '% survival</div>' +
+      '<div>half-life: ' + halfText + ' repo generations</div>' +
+      '<div>maintenance cost: ' + esc(metrics.future_maintenance_cost ?? "-") + '</div>' +
+      '<div>option value: ' + esc(metrics.maintenance_option_value ?? "-") + '</div>' +
+      '<div>invariant survival: ' +
+      (metrics.invariant_survival == null ? "n/a" : Math.round(metrics.invariant_survival * 100) + "%") +
+      '</div><div>dependency robustness: ' +
+      (metrics.dependency_robustness == null ? "n/a" : Math.round(metrics.dependency_robustness * 100) + "%") +
+      '</div></div>' +
+      '<div class="forge-card"><b>Temporal Survival Curve</b>' +
+      renderSurvivalCurve(report.survival_curve) + '</div>' +
+      '<div class="forge-card"><b>Most likely future death</b><div style="margin-top:6px">' +
+      esc(Object.entries(report.death_modes || {})
+        .sort((a, b) => Number(b[1]) - Number(a[1]))
+        .map(([key, value]) => key + ": " + value).join(" · ") || "no observed death") +
+      '</div></div>';
+  }
+
+  async function pollChrono(runId) {
+    while (activeChronoId === runId) {
+      const r = await apiFetch("/api/chronoforge/" + encodeURIComponent(runId));
+      const item = await r.json();
+      if (!r.ok) throw new Error(item.detail || "ChronoForge status failed");
+      renderChrono(item);
+      if (["completed", "failed", "cancelled", "interrupted"].includes(item.status)) {
+        activeChronoId = null;
+        chronoTask.disabled = false;
+        chronoTask.textContent = "⏳ Chrono";
+        if (item.status === "completed") {
+          addMessage(
+            "assistant",
+            "ChronoForge 寿命实验完成。Temporal Survival = " +
+            Math.round(Number(item.report?.metrics?.temporal_survival || 0) * 100) +
+            "%，详情见右侧 PATCH LIFE REPORT。"
+          );
+        }
+        return item;
+      }
+      await new Promise(resolve => setTimeout(resolve, 1600));
+    }
+    return null;
+  }
+
+  async function startChrono(tournamentId = null) {
+    if (activeChronoId || chronoTask.disabled || send.disabled) return;
+    let text = input.value.trim();
+    if (!tournamentId && !text) {
+      text = window.prompt("输入要做未来老化实验的当前代码意图/关键行为：") || "";
+    }
+    const generationsText = window.prompt("每条时间线模拟几代未来？1~10", "4");
+    if (generationsText === null) return;
+    const trajectoriesText = window.prompt("独立未来时间线数量？1~6", "3");
+    if (trajectoriesText === null) return;
+    const generations = Math.min(Math.max(Number.parseInt(generationsText, 10) || 4, 1), 10);
+    const trajectories = Math.min(Math.max(Number.parseInt(trajectoriesText, 10) || 3, 1), 6);
+
+    const estimated = generations * trajectories;
+    const confirmed = window.confirm(
+      "ChronoForge 将最多运行 " + estimated +
+      " 次未来维护 Agent（死亡时间线会提前停止）。\n" +
+      "所有实验发生在 Shadow Workspace，不直接修改真实项目。\n\n继续？"
+    );
+    if (!confirmed) return;
+
+    if (!tournamentId && input.value.trim()) {
+      addMessage("user", "[CHRONO] " + input.value.trim());
+      input.value = "";
+    }
+    chronoTask.disabled = true;
+    chronoTask.textContent = "Chrono 运行中";
+    chronoPanel.innerHTML =
+      '<div class="meta">正在生成 Future Model，并复制时间线 seed...</div>';
+
+    try {
+      const r = await apiFetch("/api/chronoforge", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          task: text,
+          tournament_id: tournamentId,
+          candidate_id: null,
+          generations,
+          trajectories
+        })
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || "ChronoForge submission failed");
+      activeChronoId = data.run_id;
+      await pollChrono(data.run_id);
+    } catch (e) {
+      activeChronoId = null;
+      chronoTask.disabled = false;
+      chronoTask.textContent = "⏳ Chrono";
+      chronoPanel.innerHTML = '<div class="bad">ChronoForge 失败：' + esc(e.message) + '</div>';
+    }
   }
 
   function genomeStatusCount(stats, key) {
@@ -1125,8 +1288,12 @@
         esc(latestPromotion.proof_sha256) + '</div><div>verification: ' +
         esc(latestPromotion.verification?.status || "unknown") + '</div></div>'
       : '';
+    const chronoAge = data.status === "completed" && data.winner_id
+      ? '<button id="ageForgeWinner" style="width:100%;margin-top:10px">' +
+        '⏳ 让胜者先活过未来</button>'
+      : '';
     const genomeImport = data.status === "completed" && data.winner_id
-      ? '<button id="importForgeGene" style="width:100%;margin-top:10px">' +
+      ? '<button id="importForgeGene" style="width:100%;margin-top:8px">' +
         '🧬 胜者送入 Genome 隔离区</button>'
       : '';
     const promote = data.status === "completed" && data.winner_id
@@ -1136,8 +1303,12 @@
 
     forgePanel.innerHTML =
       statusLine + '<div class="forge-grid" style="margin-top:9px">' + cards + '</div>' +
-      proof + genomeImport + promote;
+      proof + chronoAge + genomeImport + promote;
 
+    const ageButton = document.getElementById("ageForgeWinner");
+    if (ageButton) {
+      ageButton.addEventListener("click", () => startChrono(data.id));
+    }
     const importButton = document.getElementById("importForgeGene");
     if (importButton) {
       importButton.addEventListener("click", () => importForgeWinnerAsGene(data.id));
@@ -1330,6 +1501,7 @@
   }
 
   send.addEventListener("click", execute);
+  chronoTask.addEventListener("click", () => startChrono(null));
   forgeTask.addEventListener("click", startForge);
   cancelTask.addEventListener("click", cancelActiveTask);
   input.addEventListener("keydown", e => {
@@ -1350,6 +1522,7 @@
     reviewBox.innerHTML = '<div class="meta">执行完成后进行结果审查。</div>';
     approvalBox.innerHTML = '<div class="meta">没有等待审批的操作。</div>';
     forgePanel.innerHTML = '<div class="meta">Forge 会让多个隔离 Agent 用不同策略解决同一任务，再按真实验证证据比较。</div>';
+    chronoPanel.innerHTML = '<div class="meta">ChronoForge 会让当前代码或 Forge 胜者在多条连续未来时间线中老化，再测存活曲线与维护成本。</div>';
     tripwirePanel.innerHTML = '<div class="meta">尚未触发认知错误保险丝。</div>';
   });
 
