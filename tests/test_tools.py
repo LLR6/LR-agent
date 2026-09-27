@@ -217,3 +217,29 @@ async def test_command_output_streams_live_events(registry: ToolRegistry) -> Non
         and "live-stderr" in event["text"]
         for event in events
     )
+
+
+@pytest.mark.asyncio
+async def test_project_inspect_detects_python_and_node(registry: ToolRegistry) -> None:
+    (registry.root / "tests").mkdir(parents=True)
+    (registry.root / "pyproject.toml").write_text(
+        "[project]\nname='demo'\n",
+        encoding="utf-8",
+    )
+    (registry.root / "package.json").write_text(
+        '{"scripts":{"test":"vitest","build":"vite build"}}',
+        encoding="utf-8",
+    )
+
+    result = await registry.execute("project_inspect", {"path": "."})
+    assert result["ok"] is True
+    data = result["result"]
+    assert "python" in data["stacks"]
+    assert "node" in data["stacks"]
+    assert "pyproject.toml" in data["manifests"]
+    assert "package.json" in data["manifests"]
+
+    commands = [item["argv"] for item in data["recommended_checks"]]
+    assert ["pytest"] in commands
+    assert ["npm", "run", "test"] in commands
+    assert ["npm", "run", "build"] in commands
