@@ -162,14 +162,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/api/knowledge/rebuild")
     async def knowledge_rebuild() -> dict[str, object]:
-        return await asyncio.to_thread(tools.knowledge.rebuild)
+        return await tools.rebuild_knowledge()
 
     @app.get("/api/knowledge/search")
     async def knowledge_search(q: str, limit: int = 8) -> dict[str, object]:
         if not q.strip():
             raise HTTPException(status_code=400, detail="q cannot be empty")
         safe_limit = min(max(limit, 1), 50)
-        return await asyncio.to_thread(tools.knowledge.search, q, safe_limit)
+        return await tools.search_knowledge(q, safe_limit)
 
     @app.get("/api/sessions", response_model=list[SessionSummary])
     async def sessions() -> list[dict[str, str]]:
