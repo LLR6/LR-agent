@@ -2,7 +2,7 @@
 
 一个**真实可运行**的本地 AI Agent。它不是静态聊天页面：模型可以在受控工具权限下读取/修改工作区文件、执行白名单命令、访问公开 HTTP(S) 资源，并通过 SQLite 记住会话。
 
-> 当前版本：`0.6.0`。继续把 Coding Agent 的执行闭环做实：加入了 **命令 stdout/stderr 实时流、Web 端任务取消、项目技术栈/验证命令识别、更完整的安全文件操作，以及 Python + Web UI 双重 CI 语法检查**。
+> 当前版本：`0.7.0`。继续强化 Coding Agent 的“敢改、能验、可撤销”：现在每个 Run 会自动记录直接文件工具的原始状态和最终哈希，支持 **冲突检测后的安全回滚**，Web UI 和 CLI 都能恢复 Run 前的直接文件改动。
 
 ## 已实现
 
@@ -21,13 +21,15 @@
 - Git 只读工具：git status / git diff
 - 命令工具：**不经过 shell**，只允许配置白名单中的可执行程序；使用 asyncio 子进程，stdout/stderr 会通过 WebSocket 实时推送，任务取消/超时时会终止当前子进程
 - Web UI 可以直接取消正在运行或仍在排队的后台任务，并实时查看命令输出
+- Run 级文件快照：直接文件写入/替换/删除/移动/建目录会在执行前记录原始状态
+- 冲突感知回滚：回滚前会比较 Run 结束时记录的最终哈希与当前工作区；如果文件后来被别人或另一个任务改过，则拒绝回滚而不是覆盖新改动
 - HTTP 工具：GET 公网资源；默认拦截 localhost / 私网 / link-local / reserved 地址
 - SQLite 会话记忆 + 每次 Run 的计划、工具调用证据、最终状态和 Review 持久化
 - 中断恢复：Web UI 可点“继续此任务”，CLI 可用 `lr-agent resume RUN_ID`
 - GitHub 原生工具：仓库元数据、目录、文件、Actions；显式开启后可建 Issue、分支、写文件、开 PR
 - General / Coder / Research 三种工作模式
 - FastAPI 后端 + 本地 Web 控制台
-- CLI：`serve` / `chat` / `tasks` / `runs` / `resume` / `index` / `search` / `doctor`
+- CLI：`serve` / `chat` / `tasks` / `runs` / `resume` / `rollback` / `index` / `search` / `doctor`
 - Web/API 可选 Bearer Token 鉴权；WebSocket 同样受保护
 - 非本机监听默认要求 Web Token；Docker Compose 默认只把 8765 发布到宿主机 loopback
 - Docker / docker compose
@@ -131,6 +133,18 @@ lr-agent search "authentication flow"
 
 ```bash
 lr-agent resume <run_id>
+```
+
+安全回滚某个 Run 的直接文件改动：
+
+```bash
+lr-agent rollback <run_id>
+```
+
+脚本化场景可以显式跳过确认：
+
+```bash
+lr-agent rollback <run_id> --yes
 ```
 
 ## 5. 接本地 Ollama
@@ -381,7 +395,56 @@ Approve this action? [y/N]:
 ```
 
 
-## 13. Web / API 鉴权与远程部署
+
+## 13. Run 文件快照与安全回滚
+
+默认开启：
+
+```env
+LR_AGENT_ENABLE_RUN_SNAPSHOTS=true
+LR_AGENT_SNAPSHOT_MAX_FILE_BYTES=2000000
+```
+
+当 Agent 使用这些**直接文件工具**时，会在第一次修改每个路径之前记录原始状态：
+
+```text
+write_file
+replace_in_file
+delete_file
+move_file
+make_directory
+```
+
+同一个 Run 多次修改同一文件，只保留 Run 开始修改前的原始快照；每次修改后会更新该路径的最终状态和 SHA-256。
+
+回滚时 LR-Agent 会先检查：
+
+```text
+当前文件状态 == 该 Run 最后记录的状态？
+```
+
+如果不一致，说明 Run 结束后又发生了其他修改，回滚会返回冲突并且**一个文件也不改**。
+
+Web UI 的历史 Run 面板提供 **“回滚直接文件改动”** 按钮。API：
+
+```text
+GET  /api/runs/{run_id}/snapshots
+POST /api/runs/{run_id}/rollback
+```
+
+重要限制：这个回滚机制只覆盖 LR-Agent 自己的直接文件工具。下面这些可能产生的副作用不在快照范围：
+
+```text
+run_command
+npm / pip / gradle / cargo 等构建或包管理器
+Git hooks
+外部程序
+远程 GitHub 写操作
+```
+
+因此它是 Coding Agent 的文件级安全网，不是操作系统快照。
+
+## 14. Web / API 鉴权与远程部署
 
 本机默认访问 `127.0.0.1:8765` 时，可以保持：
 
@@ -425,7 +488,7 @@ Docker Compose 内部需要监听 `0.0.0.0`，但默认只映射：
 
 因此宿主机默认仍是本机访问。
 
-## 14. Docker
+## 15. Docker
 
 先创建 `.env`，然后：
 
@@ -448,7 +511,7 @@ Docker 会把：
 
 持久化到宿主机。
 
-## 15. 测试
+## 16. 测试
 
 ```bash
 pytest
@@ -469,6 +532,7 @@ pytest
 - 子进程任务取消与实时 stdout/stderr 事件
 - 安全文件删除/移动/建目录、按行读取
 - 项目技术栈与建议验证命令识别
+- Run 快照、自动记录最终哈希、成功回滚和外部改动冲突拒绝
 - write / command / GitHub 写操作审批生命周期与拒绝保护
 - 后台并发上限、queued 任务取消
 - 自动项目上下文检索及“不可信上下文”标记
@@ -488,6 +552,8 @@ GitHub Actions 会在 Python 3.11 和 3.12 上运行同一套测试，并额外�
 | `LR_AGENT_ENABLE_PLANNING` | `true` | Coder/Research 是否先规划 |
 | `LR_AGENT_ENABLE_REVIEW` | `true` | 是否执行结果审查 |
 | `LR_AGENT_MAX_REVIEW_RETRIES` | `1` | Reviewer 不通过后的最大返工次数 |
+| `LR_AGENT_ENABLE_RUN_SNAPSHOTS` | `true` | 是否为直接文件工具记录 Run 快照 |
+| `LR_AGENT_SNAPSHOT_MAX_FILE_BYTES` | `2000000` | 单文件自动快照上限 |
 | `LR_AGENT_WORKSPACE` | `./workspace` | Agent 工作目录 |
 | `LR_AGENT_DATABASE` | `./data/lr_agent.db` | 会话、Run、Task SQLite 数据库 |
 | `LR_AGENT_KNOWLEDGE_DATABASE` | `./data/knowledge.db` | 项目知识索引数据库 |
@@ -512,9 +578,9 @@ GitHub Actions 会在 Python 3.11 和 3.12 上运行同一套测试，并额外�
 
 1. embeddings + FTS5 的混合 RAG
 2. 多工作区与项目配置文件
-3. Run 级变更快照与一键回滚
-4. 可配置的审批策略（按命令、路径、仓库细分）
-5. 浏览器自动化 / Windows 桌面客户端
+3. 可配置的审批策略（按命令、路径、仓库细分）
+4. 浏览器自动化
+5. Windows 桌面客户端与托盘常驻
 6. 考研 / 网安专用 Agent profile
 
 ---
