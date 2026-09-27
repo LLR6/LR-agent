@@ -2,7 +2,7 @@
 
 一个**真实可运行**的本地 AI Agent。它不是静态聊天页面：模型可以在受控工具权限下读取/修改工作区文件、执行白名单命令、访问公开 HTTP(S) 资源，并通过 SQLite 记住会话。
 
-> 当前版本：`0.9.0`。新增 **Counterfactual Forge（反事实平行宇宙）+ Proof-Carrying Patch（携证补丁）**：同一个 Coding 任务可以在多个隔离工作区同时采用不同策略，真实跑检查后按证据评分；还可让模型根据首轮胜负“进化”出第四种策略。胜者不会直接覆盖主工作区，必须经过基线冲突检查，并在真实 workspace 重新执行验证；复验失败会自动恢复原文件。
+> 当前版本：`1.0.0`。在 Counterfactual Forge 之上加入 **Causal Genome Engine（因果策略基因组）**：成功一次的策略不会直接变成“长期经验”，而是先进入 quarantine，再通过 Treatment vs Control 平行宇宙消融、主动证伪、反例 Anti-Gene、血缘污染传播、Proof-Carrying Gene 和 Invariant DNA 才能逐步获得信任。Agent 运行中还加入 **Epistemic Tripwire**，当它重复失败或无验证地反复修改同一路径时，会主动打断机械循环并要求重新检查假设。
 
 ## 已实现
 
@@ -21,6 +21,15 @@
 - **Evidence Score**：候选不是靠“谁说得像”，而是综合 Reviewer 结果、真实测试退出码、工具失败、修改范围等证据进行可解释评分
 - **冲突感知晋升**：Forge 开始时记录主工作区基线哈希；晋升前再次检查，如果用户或其他 Agent 后来改过同一路径，则拒绝覆盖
 - **Proof-Carrying Patch**：胜者晋升后会在真实 workspace 重放它的验证命令；失败就自动回滚，成功则生成带变更、证据、复验结果和 SHA-256 的机器可读 Proof Bundle
+- **Causal Genome**：Forge 胜者可以进入策略基因隔离区，但默认保持 `quarantine`；一次成功只算 provenance，不算因果证据
+- **Treatment vs Control 消融**：同一个真实任务分别在两个隔离 Universe 中运行“使用 Gene”和“独立解决不用 Gene”，比较真实验证证据的边际差值；可运行 1～5 个独立 trial
+- **Falsification Mode**：Treatment Agent 会主动寻找该 Gene 的不适用条件、边界和反例，而不是为了证明 Gene 正确而强行套用
+- **Anti-Gene**：当 Gene 在受控消融中明显有害时，不直接删除失败经验，而是生成上下文特定的反基因，告诉后续 Agent“哪些情况下不要盲用”
+- **Genealogy / Contamination Graph**：派生 Gene 记录父子血缘；当祖先来源被发现污染，可把 distrust 传播给整棵后代子树并降低置信度
+- **Proof-Carrying Gene**：Gene 可携带自己的可执行 verifier；Treatment 和 Control 都会在各自 Shadow Workspace 中额外执行同一套 verifier，失败候选会被证据评分惩罚
+- **Invariant DNA**：保存“这个项目长期必须保持什么”的可执行不变量；Forge 胜者即使自己的测试通过，只要真实 workspace 上破坏任一 active invariant，也会自动回滚
+- **Epistemic Tripwire**：检测重复相同失败、同一路径在没有成功验证的情况下被连续修改等早期失控信号，触发后向 Agent 注入“停止机械重复、重新检查假设、先做区分性诊断”的约束
+- **Genome Jobs**：A/B 消融和主动证伪作为持久化后台实验运行，服务重启后未完成实验标记为 interrupted，而不是悄悄消失
 - Shadow Universe 默认禁止 `git push`、`gh pr create`、`npm publish`、`cargo publish`、`mvn deploy` 等外部写操作
 - 检索安全：自动召回的项目内容会明确标记为 **UNTRUSTED PROJECT DATA**，不会被当作系统指令
 - 文件工具：列目录、全文搜索、按行读取、写文件、精确替换、单文件删除/移动、创建目录；写入/替换会返回统一 Diff
@@ -36,7 +45,7 @@
 - GitHub 原生工具：仓库元数据、目录、文件、Actions；显式开启后可建 Issue、分支、写文件、开 PR
 - General / Coder / Research 三种工作模式
 - FastAPI 后端 + 本地 Web 控制台
-- CLI：`serve` / `chat` / `forge` / `forge-list` / `forge-promote` / `tasks` / `runs` / `resume` / `rollback` / `index` / `search` / `doctor`
+- CLI：`serve` / `chat` / `forge` / `forge-list` / `forge-promote` / `genome-add` / `genome-import` / `genome-list` / `genome-ablate` / `genome-falsify` / `genome-contaminate` / `invariant-add` / `invariant-list` / `invariant-check` / `tasks` / `runs` / `resume` / `rollback` / `index` / `search` / `doctor`
 - Web/API 可选 Bearer Token 鉴权；WebSocket 同样受保护
 - 非本机监听默认要求 Web Token；Docker Compose 默认只把 8765 发布到宿主机 loopback
 - Docker / docker compose
@@ -502,7 +511,7 @@ Git hooks
 任务 → 一个方案 → 改代码 → 测试
 ```
 
-LR-Agent 0.9 可以主动建立多条互不影响的反事实时间线：
+LR-Agent 可以主动建立多条互不影响的反事实时间线：
 
 ```text
                          ┌─ Surgical Minimalist ──┐
@@ -599,7 +608,265 @@ Proof Bundle 包含：
 
 如果真实 workspace 复验失败，LR-Agent 会使用晋升前备份自动恢复；不会留下一个“Shadow 里说成功、主环境实际坏了”的半成品。
 
-## 15. Web / API 鉴权与远程部署
+## 15. Causal Genome Engine
+
+普通“Agent Memory”常见做法是：
+
+```text
+这次成功
+  ↓
+总结成经验
+  ↓
+下次直接复用
+```
+
+LR-Agent 1.0 默认不相信这种单次归纳。Forge 胜者进入 Genome 时只获得：
+
+```text
+quarantine
+```
+
+而不是直接变成 active skill。
+
+完整生命周期：
+
+```text
+Forge / 手工候选
+      ↓
+  QUARANTINE
+      ↓
+Treatment vs Control
+Counterfactual Ablation
+      ↓
+┌───────────────┬────────────────┬─────────────────┐
+│ positive lift │ neutral result │ negative effect │
+└───────┬───────┴────────┬───────┴────────┬────────┘
+        │                │                │
+   累积正证据        继续隔离观察      生成 Anti-Gene
+        │                                 │
+        └──────────┐                      │
+                   ↓                      ↓
+             ACTIVE GENE             COUNTEREXAMPLE
+                   │
+          未来仍可被主动证伪
+                   │
+          ┌────────┴────────┐
+          ↓                 ↓
+      CONTested        CONTAMINATED
+                            │
+                     distrust 传播后代
+```
+
+### 从 Forge 导入 Gene
+
+Web UI 的 Forge 结果下面可以直接点击 **“🧬 胜者送入 Genome 隔离区”**。
+
+CLI：
+
+```bash
+lr-agent genome-import <tournament_id>
+```
+
+导入后仍是 quarantine，因为：
+
+> Forge 胜过其他候选，只能说明它在这一次 Tournament 中表现好；不能证明“这个策略”本身导致了成功。
+
+### Treatment vs Control 消融
+
+```bash
+lr-agent genome-ablate <gene_id> "修复当前 parser 回归" --trials 3
+```
+
+每个 trial 都会建立相同 baseline 的两个 Shadow Workspace：
+
+```text
+                 same task / same project baseline
+                              │
+                 ┌────────────┴────────────┐
+                 ↓                         ↓
+             TREATMENT                  CONTROL
+         使用目标 Strategy Gene      明确不使用该 Gene
+                 │                         │
+              real tools                real tools
+              real edits                real edits
+              real tests                real tests
+                 │                         │
+                 └──────── evidence ───────┘
+                              │
+                         effect = T - C
+```
+
+只有累计实验数量、正向比例和平均 lift 同时达到阈值，Gene 才会从 quarantine 进入 active。
+
+默认：
+
+```env
+LR_AGENT_GENE_POSITIVE_LIFT_THRESHOLD=8
+LR_AGENT_GENE_NEGATIVE_LIFT_THRESHOLD=-8
+LR_AGENT_GENE_ACTIVATION_MIN_EXPERIMENTS=3
+LR_AGENT_GENE_ACTIVATION_MIN_POSITIVE_RATE=0.67
+LR_AGENT_GENE_ACTIVATION_MIN_AVERAGE_LIFT=8
+```
+
+**重要限制：** 这是一套工程上的 counterfactual ablation / evidence heuristic，不是严格随机化统计实验或形式化因果证明。两个 Agent Run 仍然可能受到模型随机性、工具顺序和环境噪声影响，所以系统要求重复 trial，并把 effect 当作“可证伪证据”而不是绝对真理。
+
+### 主动证伪
+
+```bash
+lr-agent genome-falsify <gene_id> "一个你怀疑它会失效的真实任务" --trials 3
+```
+
+Falsification Treatment 不会收到“证明这个 Gene 很好”的目标，而是被明确要求：
+
+- 先攻击适用前提；
+- 主动检查 exclusions；
+- 找边界条件；
+- 用工具证明它到底适不适用；
+- 不适用时不得强行套策略。
+
+负向实验会被保留，而不是从历史中擦掉。
+
+### Anti-Gene
+
+当使用原 Gene 的 Treatment 明显输给 Control，系统会记录一个上下文特定的 Anti-Gene。例如：
+
+```text
+Gene:
+  大范围重构后再修局部 bug
+
+Counterexample:
+  一行 parser regression
+
+A/B effect:
+  -31.4
+
+Anti-Gene:
+  遇到此类局部回归时，不要在确认根因前盲目进行全模块重构
+```
+
+后续 Agent 看到 Anti-Gene 时，系统提示它把这看成**负面实验依据**，而不是硬编码规则。
+
+### Proof-Carrying Gene
+
+Gene 可以携带 verifier：
+
+```json
+[
+  {"argv":["pytest","tests/test_auth.py"],"cwd":"."},
+  {"argv":["python","scripts/check_token_rotation.py"],"cwd":"."}
+]
+```
+
+消融实验不会只相信候选自己的回答。Treatment 和 Control 的 Shadow Workspace 都会执行同一套 Gene verifier；如果失败，候选 Evidence Score 会被额外惩罚。
+
+### Genealogy 与污染传播
+
+派生 Gene 可以带 parent：
+
+```text
+async-debug-v2
+      │
+      ├── fixture-isolation-v3
+      │       └── loop-lifecycle-v1
+      └── anyio-boundary-v2
+```
+
+如果后来发现 `async-debug-v2` 的来源轨迹被污染、误标或者不可信：
+
+```bash
+lr-agent genome-contaminate <gene_id> "source trajectory was poisoned"
+```
+
+默认会把 contaminated 状态沿后代血缘传播，并降低整条后代链的 confidence。可以用 `--no-propagate` 只标记当前 Gene。
+
+### Invariant DNA
+
+Gene 回答的是：
+
+> “怎么做可能更好？”
+
+Invariant DNA 回答的是：
+
+> “无论怎么改，这个项目有什么不能被破坏？”
+
+添加：
+
+```bash
+lr-agent invariant-add \
+  "refresh token rotation" \
+  "刷新后旧 refresh token 必须失效" \
+  --command "pytest tests/test_refresh_rotation.py"
+```
+
+检查：
+
+```bash
+lr-agent invariant-check
+```
+
+Forge 晋升链现在是：
+
+```text
+winner
+  ↓
+baseline conflict check
+  ↓
+临时应用
+  ↓
+winner verification
+  ↓
+Invariant DNA verification
+  ↓
+┌──────────┴──────────┐
+PASS                  FAIL
+ ↓                     ↓
+Proof Bundle        自动恢复
+ ↓
+accept
+```
+
+所以“新功能测试通过”不代表可以破坏长期项目不变量。
+
+### Epistemic Tripwire
+
+LR-Agent 还会观察自己的执行行为。默认触发条件包括：
+
+- 同一种失败重复出现至少 2 次；
+- 同一路径连续修改至少 3 次，期间没有成功执行 recognized verification。
+
+触发后 Web UI 会显示 **TRIPWIRE**，同时 Agent 会收到一条可观察行为约束：
+
+```text
+停止机械重复当前方案
+→ 重新读取相关状态
+→ 挑战当前假设
+→ 优先做能区分不同假设的诊断
+→ 证据冲突时切换策略
+```
+
+它不会伪装成“模型突然更聪明了”；Tripwire 只是一个明确、可审计的失控检测器。
+
+### Web UI
+
+右侧 **CAUSAL GENOME** 面板会显示：
+
+- active / quarantine / contested / contaminated 数量；
+- Evidence 记录数；
+- active Invariant DNA；
+- Gene confidence 与平均 effect；
+- A/B 消融入口；
+- 主动证伪入口；
+- Invariant DNA 一键复验。
+
+Genome 实验使用持久化 Job 记录：
+
+```text
+queued → running → completed / failed / cancelled / interrupted
+```
+
+服务重启不会把之前还在运行的实验伪装成完成。
+
+## 16. Web / API 鉴权与远程部署
 
 本机默认访问 `127.0.0.1:8765` 时，可以保持：
 
@@ -643,7 +910,7 @@ Docker Compose 内部需要监听 `0.0.0.0`，但默认只映射：
 
 因此宿主机默认仍是本机访问。
 
-## 16. Docker
+## 17. Docker
 
 先创建 `.env`，然后：
 
@@ -666,7 +933,7 @@ Docker 会把：
 
 持久化到宿主机。
 
-## 17. 测试
+## 18. 测试
 
 ```bash
 pytest
@@ -694,6 +961,14 @@ pytest
 - 后台并发上限、queued 任务取消
 - 自动项目上下文检索及“不可信上下文”标记
 - REST Bearer Token 与 WebSocket Token 鉴权
+- Strategy Gene quarantine → repeated causal-ablation activation
+- harmful ablation → context-specific Anti-Gene
+- Genealogy contamination propagation through descendants
+- Causal Genome experiment Job persistence
+- active Gene / Invariant-only Agent context injection
+- Proof-Carrying Gene verifier execution in Shadow candidates
+- Invariant DNA veto during Forge promotion with automatic rollback
+- Epistemic Tripwire on repeated unverified mutation loops
 - Counterfactual Universe 隔离：候选修改不触碰真实 workspace
 - Shadow Mode 外部发布/Push 防护
 - Evidence Score 的真实测试退出码计分
@@ -738,6 +1013,18 @@ GitHub Actions 会在 Python 3.11 和 3.12 上运行同一套测试，并额外�
 | `LR_AGENT_UNIVERSE_MAX_FILES` | `5000` | 单个 Forge 可复制跟踪的最大文件数 |
 | `LR_AGENT_UNIVERSE_MAX_FILE_BYTES` | `5000000` | Forge 单文件复制/跟踪上限 |
 | `LR_AGENT_UNIVERSE_EXCLUDES` | 见示例 | Shadow Workspace 默认排除目录 |
+| `LR_AGENT_GENOME_ENABLED` | `true` | 是否向 Coder/Research 注入 active Causal Genome 证据 |
+| `LR_AGENT_GENOME_DATABASE` | `./data/genome.db` | Gene / Anti-Gene / Evidence / Invariant / Genome Job 数据库 |
+| `LR_AGENT_GENOME_CONTEXT_RESULTS` | `3` | 单轮最多召回的 active Gene 数 |
+| `LR_AGENT_GENE_POSITIVE_LIFT_THRESHOLD` | `8` | 单次实验判为正向证据的最低 Treatment-Control effect |
+| `LR_AGENT_GENE_NEGATIVE_LIFT_THRESHOLD` | `-8` | 单次实验判为负向证据的 effect 阈值 |
+| `LR_AGENT_GENE_ACTIVATION_MIN_EXPERIMENTS` | `3` | Gene 激活前最低实验数 |
+| `LR_AGENT_GENE_ACTIVATION_MIN_POSITIVE_RATE` | `0.67` | Gene 激活最低正向证据比例 |
+| `LR_AGENT_GENE_ACTIVATION_MIN_AVERAGE_LIFT` | `8` | Gene 激活最低平均 effect |
+| `LR_AGENT_INVARIANTS_ENABLED` | `true` | 是否启用 Invariant DNA 上下文和 Forge 晋升复验 |
+| `LR_AGENT_EPISTEMIC_TRIPWIRE` | `true` | 是否启用执行失控检测 |
+| `LR_AGENT_TRIPWIRE_REPEAT_FAILURES` | `2` | 相同失败重复多少次触发 Tripwire |
+| `LR_AGENT_TRIPWIRE_REPEAT_MUTATIONS` | `3` | 同一路径未验证修改多少次触发 Tripwire |
 | `LR_AGENT_APPROVAL_MODE` | `off` | `off / writes / all` 交互式审批范围 |
 | `LR_AGENT_APPROVAL_TIMEOUT_S` | `600` | 单次审批等待秒数 |
 | `LR_AGENT_WEB_TOKEN` | 空 | Web/API/WS 鉴权 Token |
@@ -750,13 +1037,15 @@ GitHub Actions 会在 Python 3.11 和 3.12 上运行同一套测试，并额外�
 
 后续可以继续做：
 
-1. **Strategy Genome**：把历次 Forge 胜负变成可检索的“策略基因库”，让 Agent 跨任务进化
-2. 多工作区与项目配置文件
-3. 可配置的审批策略（按命令、路径、仓库细分）
-4. 浏览器自动化
-5. Windows 桌面客户端与托盘常驻
-6. 考研 / 网安专用 Agent profile
-7. 向量增量更新与更大规模 ANN 索引
+1. **Adversarial Counterexample Generator**：让 Falsifier 自动合成项目内可执行的最小反例，而不只依赖用户提供挑战任务
+2. **Gene Lifetime / Decay**：当依赖版本、代码结构或项目分布改变后，旧 Gene 自动降权并重新进入验证
+3. **Cross-Project Genome Transfer**：在严格 provenance 隔离下研究“哪些 Gene 可跨仓库迁移、哪些必须项目私有”
+4. 多工作区与项目配置文件
+5. 可配置的审批策略（按命令、路径、仓库细分）
+6. 浏览器自动化
+7. Windows 桌面客户端与托盘常驻
+8. 考研 / 网安专用 Agent profile
+9. 向量增量更新与更大规模 ANN 索引
 
 ---
 
