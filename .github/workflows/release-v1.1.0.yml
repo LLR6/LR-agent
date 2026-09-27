@@ -1,0 +1,33 @@
+name: Publish v1.1.0
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/release-v1.1.0.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view v1.1.0 >/dev/null 2>&1; then
+            echo "v1.1.0 already exists; nothing to do."
+            exit 0
+          fi
+
+          gh release create v1.1.0 \
+            --target "$GITHUB_SHA" \
+            --title "LR-Agent v1.1.0 — ChronoForge" \
+            --notes-file docs/RELEASE_v1.1.0.md
