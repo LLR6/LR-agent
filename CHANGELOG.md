@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.9.0 - 2026-09-27
+
+### Added
+
+- Counterfactual Forge: 2–4 isolated shadow workspaces can solve the same coding task with different strategies.
+- Evidence-based candidate ranking using Reviewer outcome, real verification exit codes, tool failures and change scope.
+- Optional evolved strategy synthesized from first-round observable evidence.
+- Conflict-aware candidate promotion against the original workspace baseline.
+- Proof-Carrying Patch bundles containing strategy, hashes, applied changes, verification evidence and a SHA-256 proof digest.
+- Real-workspace verification replay after promotion.
+- Automatic restoration of promoted files when real-workspace verification fails.
+- Web UI Forge control center and winner promotion flow.
+- CLI `forge`, `forge-list` and `forge-promote` commands.
+- REST endpoints for starting, inspecting and promoting Forge tournaments.
+
+### Safety
+
+- Shadow universes never mutate the source workspace during candidate execution.
+- Shadow mode blocks common remote side effects such as `git push`, GitHub creation commands and package publishing/deployment.
+- Promotion refuses to overwrite paths changed in the real workspace since the tournament baseline.
+- Promotion verification runs with GitHub writes disabled.
+- A failed real-workspace verification automatically restores backed-up files instead of leaving a partially accepted candidate.
+
+### Changed
+
+- Package and API version updated to 0.9.0.
+
+
 ## 0.8.0 - 2026-09-27
 
 ### Added
