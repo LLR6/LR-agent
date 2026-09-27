@@ -1,24 +1,160 @@
 # LR-Agent
 
-一个**真实可运行**的本地 AI Agent。它不是静态聊天页面：模型可以在受控工具权限下读取/修改工作区文件、执行白名单命令、访问公开 HTTP(S) 资源，并通过 SQLite 记住会话。
+<p align="center">
+  <strong>A coding agent that asks not only “does this patch work today?” — but “can it survive tomorrow?”</strong>
+</p>
 
-> 当前版本：`1.1.0`。新增 **ChronoForge — Prospective Software Evolution Laboratory**：代码或 Forge 候选补丁在进入现实前，可以先被复制到多条连续的“未来仓库时间线”中，经历依赖升级、API 弃用、相邻功能、Schema 迁移、模块拆分、运行时变化、性能压力和配置契约变化。每一代未来都继承上一代真实代码，再由 Future Maintainer Agent 继续维护；系统随后重放原始验证与 Invariant DNA，输出 Temporal Survival Curve、维护成本、Maintenance Option Value 和预测半衰期。
+<p align="center">
+  让代码在合并前先经历未来：竞争补丁、策略证伪、连续仓库演化、原行为重放与长期不变量验证。
+</p>
 
-## Research / 研究文档
+<p align="center">
+  <a href="./README_EN.md">English</a> ·
+  <a href="./docs/DEMO_CHRONOFORGE.md">5 分钟 Demo</a> ·
+  <a href="./docs/research/README.md">Research</a> ·
+  <a href="./CONTRIBUTING.md">Contributing</a>
+</p>
 
-LR-Agent 不只保留功能说明，也把研究假设、相关工作边界、可证伪实验和未来路线单独记录在仓库中：
+<p align="center">
+  <img alt="CI" src="https://github.com/LLR6/LR-agent/actions/workflows/ci.yml/badge.svg">
+  <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-blue">
+  <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-green">
+  <img alt="Version 1.1.0" src="https://img.shields.io/badge/version-1.1.0-8b5cf6">
+</p>
 
-- **[Research Program](./docs/research/README.md)** — 总体研究问题与当前机制
-- **[State of the Art](./docs/research/STATE_OF_THE_ART.md)** — Self-Evolving Agents、BASM、SkillJack、SWE-EVO、SWE-Future、AgenticSZZ 等相关工作与差异
-- **[Causal Genome](./docs/research/CAUSAL_GENOME.md)** — quarantine、Treatment vs Control、Falsification、Anti-Gene、Genealogy、Invariant DNA
-- **[ChronoForge](./docs/research/CHRONOFORGE.md)** — Patch Aging、Future Trajectory、Temporal Survival、Maintenance Option Value、Reality Calibration
-- **[Novelty Claims](./docs/research/NOVELTY_CLAIMS.md)** — 哪些能说、哪些不能说，以及“未检索到同构公开系统”的边界
-- **[Experiments](./docs/research/EXPERIMENTS.md)** — Benchmark、Ablation、统计方法、时间切分与泄漏控制
-- **[Research Roadmap](./docs/research/ROADMAP.md)** — Chrono Tournament、Temporal Anti-Gene、Counterfactual Software Archaeology、Intent Recoverability 等
-- **[Bibliography](./docs/research/BIBLIOGRAPHY.md)** — 工作参考文献与检索记录
-- **[Implementation Map](./docs/research/IMPLEMENTATION_MAP.md)** — 每个研究概念对应到具体源码和测试
+## 30 秒看懂 LR-Agent
 
-研究文档采用保守表述：不会把“我们暂时没检索到”写成“全人类从未研究过”。涉及 novelty 的结论被明确标成 **search-based novelty hypothesis**，并保留可被后续文献推翻和修订的空间。
+普通 Coding Agent 的闭环通常是：
+
+```text
+任务 → 生成 Patch → 当前测试通过 → 完成
+```
+
+LR-Agent 把“完成”往后推：
+
+```text
+                         ┌─ Patch A ─┐
+当前任务 → Counterfactual├─ Patch B ─┼→ 真实测试 / Evidence
+            Forge        └─ Patch C ─┘
+                                  │
+                                  ▼
+                         Causal Genome
+                    策略先证伪，再进入长期记忆
+                                  │
+                                  ▼
+                           ChronoForge
+                 让 Patch 在连续未来仓库中老化
+                                  │
+              ┌───────────────────┼───────────────────┐
+              ▼                   ▼                   ▼
+         dependency          API/schema          adjacent
+          upgrade             evolution           feature
+              │                   │                   │
+              └──────────── sequential generations ──┘
+                                  │
+                                  ▼
+                   replay original checks + invariants
+                                  │
+                                  ▼
+                         PATCH LIFE REPORT
+```
+
+**核心区别：两个 Patch 今天都能通过测试，不代表它们未来同样好维护。**
+
+## 三个最值得看的能力
+
+### ⚡ Counterfactual Forge
+
+同一个 Coding 任务放进多个隔离 Shadow Workspace，用不同策略真实改代码、跑命令、跑测试，再按可观察证据比较。胜者不会直接覆盖真实工作区；晋升前有基线冲突检测，晋升后还会在真实 workspace 重新验证，失败自动恢复。
+
+### 🧬 Causal Genome
+
+LR-Agent 不把“一次成功”直接记成长期技能。候选策略先进入 `quarantine`，再做 Treatment vs Control 消融、主动证伪、Anti-Gene、血缘污染传播与 Proof-Carrying Gene 验证。只有积累足够证据的 Gene 才进入正常 Agent 上下文。
+
+### ⏳ ChronoForge
+
+把当前 workspace 或 Forge 候选复制到多条未来时间线。**generation N 真正继承 generation N-1 的代码**，未来维护 Agent 会继续修改仓库；每一代都会重放 Seed 验证和 Invariant DNA，最终得到：
+
+- Temporal Survival Curve
+- Future Maintenance Cost
+- Maintenance Option Value
+- Invariant Survival
+- Dependency Robustness
+- Patch Surface Stability
+- repository-generation Half-Life
+- Temporal Death Modes
+
+> 当前版本：**1.1.0**。ChronoForge 是研究型工程原型：未来场景和 Option Value 是可审计的工程启发式，不是“能预测现实未来”的宣传口号。
+
+## 5 分钟开始
+
+要求 Python 3.11+。
+
+```bash
+git clone https://github.com/LLR6/LR-agent.git
+cd LR-agent
+python -m venv .venv
+```
+
+Windows PowerShell：
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+pip install -e ".[dev]"
+Copy-Item .env.example .env
+```
+
+Linux / macOS：
+
+```bash
+source .venv/bin/activate
+pip install -e ".[dev]"
+cp .env.example .env
+```
+
+在 `.env` 配好一个 OpenAI-compatible 模型后：
+
+```bash
+lr-agent doctor
+lr-agent serve
+```
+
+然后可以直接试：
+
+```bash
+# 多个隔离候选竞争
+lr-agent forge "修复当前项目测试失败，必须真实验证" --evolve
+
+# 让当前实现先经历未来维护压力
+lr-agent chrono "保持当前核心行为" --generations 4 --trajectories 3
+```
+
+想看一个最小、可复现的 ChronoForge 演示：
+
+**→ [5-minute ChronoForge Demo](./docs/DEMO_CHRONOFORGE.md)**
+
+## 为什么这个仓库值得关注
+
+LR-Agent 不是把 Planner / Reviewer / RAG 再组合一遍，而是在实验几个更具体的问题：
+
+- **成功经验到底是不是导致成功的原因？**
+- **Agent 学错了之后，如何保留反例而不是只删记录？**
+- **项目长期必须保持的约束，能否独立于任务/策略存在？**
+- **一个今天正确的 Patch，能不能在合并前先接受“未来维护压力测试”？**
+- **现实后来发生的仓库变化，能否反过来校准 Future Model？**
+
+完整研究边界、相关工作、可证伪实验和 benchmark 计划都公开在 [`docs/research/`](./docs/research/README.md)。
+
+## Research / 研究入口
+
+- **[Research Program](./docs/research/README.md)** — 总体研究问题
+- **[State of the Art](./docs/research/STATE_OF_THE_ART.md)** — 相关工作与边界
+- **[Causal Genome](./docs/research/CAUSAL_GENOME.md)** — 可证伪策略记忆
+- **[ChronoForge](./docs/research/CHRONOFORGE.md)** — 前瞻式 Patch Aging
+- **[Novelty Claims](./docs/research/NOVELTY_CLAIMS.md)** — 哪些能说、哪些不能说
+- **[Experiments](./docs/research/EXPERIMENTS.md)** — Benchmark / Ablation / 统计设计
+- **[Roadmap](./docs/research/ROADMAP.md)** — Chrono Tournament 等下一阶段
+- **[Implementation Map](./docs/research/IMPLEMENTATION_MAP.md)** — 研究概念对应源码和测试
 
 ## 已实现
 
