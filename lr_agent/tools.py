@@ -3,11 +3,12 @@ from __future__ import annotations
 import asyncio
 import base64
 import difflib
-import ipaddress
 import json
+import ipaddress
 import os
 import shutil
 import socket
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urljoin, urlparse
@@ -301,14 +302,83 @@ class ToolRegistry:
             },
         }
 
+    def _requires_approval(self, name: str) -> bool:
+        mode = self.settings.normalized_approval_mode
+        if mode == "off":
+            return False
+        write_tools = {
+            "write_file",
+            "replace_in_file",
+            "github_create_issue",
+            "github_create_branch",
+            "github_put_file",
+            "github_create_pull_request",
+        }
+        if name in write_tools:
+            return True
+        return mode == "all" and name == "run_command"
+
+    def _approval_preview(self, name: str, arguments: dict[str, Any]) -> str:
+        if name == "write_file":
+            path = str(arguments.get("path", ""))
+            content = str(arguments.get("content", ""))
+            target = self._safe_path(path)
+            old = (
+                target.read_text(encoding="utf-8", errors="replace")
+                if target.is_file()
+                else ""
+            )
+            diff, truncated = self._text_diff(old, content, path)
+            suffix = "\n[diff truncated]" if truncated else ""
+            return (diff or f"Create or replace {path} ({len(content)} chars)") + suffix
+
+        if name == "replace_in_file":
+            path = str(arguments.get("path", ""))
+            old_text = str(arguments.get("old", ""))
+            new_text = str(arguments.get("new", ""))
+            target = self._safe_path(path)
+            if not target.is_file():
+                return f"Replace text in missing file: {path}"
+            text = target.read_text(encoding="utf-8", errors="replace")
+            updated = text.replace(old_text, new_text)
+            diff, truncated = self._text_diff(text, updated, path)
+            suffix = "\n[diff truncated]" if truncated else ""
+            return (diff or f"No textual diff for {path}") + suffix
+
+        if name == "run_command":
+            argv = arguments.get("argv", [])
+            cwd = arguments.get("cwd", ".")
+            return f"cwd={cwd}\n$ " + " ".join(str(x) for x in argv)
+
+        safe = dict(arguments)
+        if "content" in safe:
+            content = str(safe["content"])
+            safe["content"] = content[:2000] + ("..." if len(content) > 2000 else "")
+        return json.dumps({"tool": name, "arguments": safe}, ensure_ascii=False, indent=2)[:12000]
+
     def _safe_path(self, relative: str) -> Path:
         candidate = (self.root / relative).resolve()
         if candidate != self.root and self.root not in candidate.parents:
             raise ToolError(f"Path escapes workspace: {relative}")
         return candidate
 
-    async def execute(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    async def execute(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        *,
+        approval_handler: Callable[[str, dict[str, Any], str], Awaitable[bool]] | None = None,
+    ) -> dict[str, Any]:
         try:
+            if self._requires_approval(name):
+                preview = self._approval_preview(name, arguments)
+                if approval_handler is None:
+                    raise ToolError(
+                        f"Tool '{name}' requires interactive approval, but no approval handler is available."
+                    )
+                approved = await approval_handler(name, arguments, preview)
+                if not approved:
+                    raise ToolError(f"Tool '{name}' was denied by the user.")
             if name == "list_files":
                 value = self._list_files(**arguments)
             elif name == "search_files":
