@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - ".github/workflows/release-v1.1.0.yml"
+      - "docs/RELEASE_v1.1.0.md"
   workflow_dispatch:
 
 permissions:
@@ -23,7 +24,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view v1.1.0 >/dev/null 2>&1; then
-            echo "v1.1.0 already exists; nothing to do."
+            gh release edit v1.1.0 \
+              --title "LR-Agent v1.1.0 — ChronoForge" \
+              --notes-file docs/RELEASE_v1.1.0.md
             exit 0
           fi
 
