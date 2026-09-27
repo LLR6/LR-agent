@@ -479,7 +479,12 @@
       const r = await apiFetch("/api/knowledge/stats");
       const data = await r.json();
       if (!r.ok) throw new Error(data.detail || "stats failed");
-      el.textContent = "knowledge: " + data.files + " files / " + data.chunks + " chunks";
+      const embedded = Number(data.embeddings || 0);
+      const models = (data.embedding_models || []).join(", ");
+      el.textContent =
+        "knowledge: " + data.files + " files / " + data.chunks + " chunks" +
+        (embedded ? " / " + embedded + " vectors" : "") +
+        (models ? " · " + models : "");
     } catch (_) {
       el.textContent = "knowledge: unavailable";
     }
@@ -495,7 +500,9 @@
       const data = await r.json();
       if (!r.ok) throw new Error(data.detail || "rebuild failed");
       document.getElementById("knowledgeStats").textContent =
-        "knowledge: " + data.indexed_files + " files / " + data.indexed_chunks + " chunks";
+        "knowledge: " + data.indexed_files + " files / " + data.indexed_chunks + " chunks" +
+        (Number(data.embedded_chunks || 0) ? " / " + data.embedded_chunks + " vectors" : "") +
+        (data.embedding_error ? " · embedding fallback" : "");
       button.textContent = "✓ 索引完成";
       setTimeout(() => { button.textContent = "↻ 索引工作区知识库"; }, 1600);
     } catch (e) {
