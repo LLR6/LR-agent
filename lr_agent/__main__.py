@@ -121,7 +121,7 @@ def index_workspace() -> None:
     settings = Settings()
     settings.ensure_dirs()
     tools = ToolRegistry(settings)
-    result = tools.knowledge.rebuild()
+    result = asyncio.run(tools.rebuild_knowledge())
     console.print(
         Panel(
             "\n".join(
@@ -130,6 +130,8 @@ def index_workspace() -> None:
                     f"chunks: {result['indexed_chunks']}",
                     f"skipped: {result['skipped_files']}",
                     f"fts5: {result['fts_enabled']}",
+                    f"embeddings: {result.get('embedded_chunks', 0)}",
+                    f"embedding_model: {result.get('embedding_model', 'disabled')}",
                     f"root: {result['root']}",
                 ]
             ),
@@ -147,7 +149,9 @@ def search_knowledge(
     settings = Settings()
     settings.ensure_dirs()
     tools = ToolRegistry(settings)
-    result = tools.knowledge.search(query, limit=min(max(limit, 1), 50))
+    result = asyncio.run(
+        tools.search_knowledge(query, limit=min(max(limit, 1), 50))
+    )
     console.print(f"[bold]mode:[/bold] {result['mode']}")
     if not result["results"]:
         console.print("[yellow]No results.[/yellow]")
