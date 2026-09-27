@@ -15,6 +15,7 @@ from urllib.parse import quote, urljoin, urlparse
 import httpx
 
 from .config import Settings
+from .knowledge import KnowledgeIndex
 
 
 class ToolError(RuntimeError):
@@ -26,6 +27,12 @@ class ToolRegistry:
         self.settings = settings
         self.root = settings.workspace.resolve()
         self.root.mkdir(parents=True, exist_ok=True)
+        self.knowledge = KnowledgeIndex(
+            self.root,
+            settings.knowledge_database,
+            max_files=settings.knowledge_max_files,
+            max_file_bytes=settings.knowledge_max_file_bytes,
+        )
 
     def specs(self) -> list[dict[str, Any]]:
         return [
@@ -122,6 +129,34 @@ class ToolRegistry:
                         "max_chars": {"type": "integer", "minimum": 1, "maximum": 100000, "default": 30000},
                     },
                     "required": ["url"],
+                },
+            ),
+            self._spec(
+                "knowledge_index",
+                "Build or rebuild a persistent searchable index of text files in the workspace.",
+                {
+                    "type": "object",
+                    "properties": {},
+                },
+            ),
+            self._spec(
+                "knowledge_search",
+                "Search the persistent workspace knowledge index. Run knowledge_index first when the index is empty or stale.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "minLength": 1},
+                        "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 8},
+                    },
+                    "required": ["query"],
+                },
+            ),
+            self._spec(
+                "knowledge_stats",
+                "Return statistics about the persistent workspace knowledge index.",
+                {
+                    "type": "object",
+                    "properties": {},
                 },
             ),
             self._spec(
@@ -266,6 +301,12 @@ class ToolRegistry:
                 value = await asyncio.to_thread(self._run_command, **arguments)
             elif name == "http_get":
                 value = await self._http_get(**arguments)
+            elif name == "knowledge_index":
+                value = await asyncio.to_thread(self.knowledge.rebuild)
+            elif name == "knowledge_search":
+                value = await asyncio.to_thread(self.knowledge.search, **arguments)
+            elif name == "knowledge_stats":
+                value = await asyncio.to_thread(self.knowledge.stats)
             elif name == "github_get_repo":
                 value = await self._github_get_repo(**arguments)
             elif name == "github_list_contents":
