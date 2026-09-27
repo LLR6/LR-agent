@@ -133,3 +133,45 @@ async def test_command_cancellation_stops_subprocess(registry: ToolRegistry) -> 
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await asyncio.wait_for(task, timeout=3)
+
+
+@pytest.mark.asyncio
+async def test_write_tool_can_require_interactive_approval(registry: ToolRegistry) -> None:
+    registry.settings.approval_mode = "writes"
+
+    async def deny(_tool, _arguments, preview):
+        assert "approved.txt" in preview
+        return False
+
+    denied = await registry.execute(
+        "write_file",
+        {"path": "approved.txt", "content": "hello"},
+        approval_handler=deny,
+    )
+    assert denied["ok"] is False
+    assert "denied by the user" in denied["error"]
+    assert not (registry.root / "approved.txt").exists()
+
+    async def approve(_tool, _arguments, preview):
+        assert "+hello" in preview
+        return True
+
+    allowed = await registry.execute(
+        "write_file",
+        {"path": "approved.txt", "content": "hello"},
+        approval_handler=approve,
+    )
+    assert allowed["ok"] is True
+    assert (registry.root / "approved.txt").read_text() == "hello"
+
+
+@pytest.mark.asyncio
+async def test_approval_mode_blocks_write_without_handler(registry: ToolRegistry) -> None:
+    registry.settings.approval_mode = "writes"
+    result = await registry.execute(
+        "write_file",
+        {"path": "blocked.txt", "content": "nope"},
+    )
+    assert result["ok"] is False
+    assert "requires interactive approval" in result["error"]
+    assert not (registry.root / "blocked.txt").exists()
