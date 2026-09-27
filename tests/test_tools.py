@@ -73,3 +73,13 @@ async def test_search_files(registry: ToolRegistry) -> None:
     assert result["ok"] is True
     assert result["result"]["matches"][0]["path"] == "src/a.py"
     assert result["result"]["matches"][0]["line"] == 2
+
+
+@pytest.mark.asyncio
+async def test_github_write_is_blocked_by_default(registry: ToolRegistry) -> None:
+    result = await registry.execute(
+        "github_create_issue",
+        {"repo": "octocat/Hello-World", "title": "should not be created"},
+    )
+    assert result["ok"] is False
+    assert "GitHub writes are disabled" in result["error"]
