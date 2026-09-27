@@ -2,7 +2,7 @@
 
 一个**真实可运行**的本地 AI Agent。它不是静态聊天页面：模型可以在受控工具权限下读取/修改工作区文件、执行白名单命令、访问公开 HTTP(S) 资源，并通过 SQLite 记住会话。
 
-> 当前版本：`0.3.0`。在 0.2 的 Planner / Executor / Reviewer 基础上，加入了 **后台任务队列、WebSocket 实时执行流、持久化任务状态、项目知识索引、文件 Diff 证据和可取消子进程**。
+> 当前版本：`0.4.0`。在 0.3 的后台任务与知识索引基础上，加入了 **交互式审批队列**：Agent 在执行本地写文件、远程 GitHub 写操作，或你配置的命令操作前，可以先展示 Diff/参数并等待你批准。
 
 ## 已实现
 
@@ -10,6 +10,7 @@
 - Planner / Executor / Reviewer：Coder、Research 模式会先生成可验证计划，执行后再由 Reviewer 检查是否真的完成
 - Tool Calling 自主循环：模型 -> 工具 -> 工具结果 -> 模型，最多执行 `LR_AGENT_MAX_STEPS` 步
 - Reviewer 发现未完成项时可自动返工，次数由 `LR_AGENT_MAX_REVIEW_RETRIES` 控制
+- 交互式审批：`off / writes / all` 三种模式；Web UI 会实时弹出待审批 Diff/命令/GitHub 写操作，CLI 也会询问 y/N
 - 后台任务队列：Web 请求不再一直阻塞等待 Agent；任务状态会持久化，服务重启后未完成任务会标记为 interrupted
 - WebSocket 实时执行流：Planner、Run、Tool Step、Reviewer、完成状态会实时推送给 Web UI
 - 项目知识索引：可把 workspace 文本文件分块写入 SQLite，优先使用 FTS5/BM25 检索；Agent 可通过 knowledge 工具检索项目上下文
@@ -294,7 +295,64 @@ POST /api/runs/{run_id}/resume-task
 
 恢复旧 Run 时也会重新进入后台队列，并重新检查当前 workspace 状态，而不是盲目沿用旧结果。
 
-## 12. Docker
+
+## 12. 交互式审批
+
+默认关闭，不影响自动执行：
+
+```env
+LR_AGENT_APPROVAL_MODE=off
+```
+
+可选：
+
+```env
+# 写文件、替换文件、GitHub 写操作需要审批
+LR_AGENT_APPROVAL_MODE=writes
+
+# 上述操作 + run_command 都需要审批
+LR_AGENT_APPROVAL_MODE=all
+
+LR_AGENT_APPROVAL_TIMEOUT_S=600
+```
+
+开启后，后台任务遇到受控工具会进入 `approval_required` 状态事件。Web UI 右侧会显示：
+
+```text
+APPROVAL
+WAITING · write_file
+
+--- a/app.py
++++ b/app.py
+@@ ...
+-old
++new
+
+[拒绝] [批准执行]
+```
+
+审批请求会持久化到 SQLite。服务重启时遗留的 pending 审批会标记为 expired，避免旧审批被错误复用。
+
+API：
+
+```text
+GET  /api/tasks/{task_id}/approvals
+POST /api/tasks/{task_id}/approvals/{approval_id}
+```
+
+请求体：
+
+```json
+{"approved": true}
+```
+
+CLI 在审批模式开启时，也会在真正执行前显示预览并询问：
+
+```text
+Approve this action? [y/N]:
+```
+
+## 13. Docker
 
 先创建 `.env`，然后：
 
@@ -317,7 +375,7 @@ Docker 会把：
 
 持久化到宿主机。
 
-## 13. 测试
+## 14. 测试
 
 ```bash
 pytest
@@ -336,6 +394,7 @@ pytest
 - 项目知识索引、FTS/LIKE 搜索与依赖目录排除
 - 文件统一 Diff 与 git status / diff
 - 子进程任务取消
+- write / command / GitHub 写操作审批生命周期与拒绝保护
 
 GitHub Actions 会在 Python 3.11 和 3.12 上运行同一套测试。
 
@@ -358,6 +417,8 @@ GitHub Actions 会在 Python 3.11 和 3.12 上运行同一套测试。
 | `LR_AGENT_ALLOWED_COMMANDS` | 见上文 | 命令白名单 |
 | `LR_AGENT_ALLOW_DESTRUCTIVE` | `false` | 是否允许已标记危险命令 |
 | `LR_AGENT_ALLOW_PRIVATE_NETWORK` | `false` | HTTP 工具是否允许访问私网 |
+| `LR_AGENT_APPROVAL_MODE` | `off` | `off / writes / all` 交互式审批范围 |
+| `LR_AGENT_APPROVAL_TIMEOUT_S` | `600` | 单次审批等待秒数 |
 | `LR_AGENT_GITHUB_TOKEN` | 空 | GitHub API Token；私有仓库/写操作需要 |
 | `LR_AGENT_GITHUB_API_BASE` | `https://api.github.com` | GitHub API 地址 |
 | `LR_AGENT_ALLOW_GITHUB_WRITE` | `false` | 是否允许 GitHub 写操作 |
@@ -366,12 +427,12 @@ GitHub Actions 会在 Python 3.11 和 3.12 上运行同一套测试。
 
 后续可以继续做：
 
-1. Diff / 命令 / GitHub 写操作的交互式审批队列
-2. embeddings + FTS5 的混合 RAG
-3. 多工作区与项目配置文件
-4. 浏览器自动化
-5. Windows 桌面客户端与托盘常驻
-6. 考研 / 网安专用 Agent profile
+1. embeddings + FTS5 的混合 RAG
+2. 多工作区与项目配置文件
+3. 浏览器自动化
+4. Windows 桌面客户端与托盘常驻
+5. 考研 / 网安专用 Agent profile
+6. 可配置的审批策略（按命令、路径、仓库细分）
 
 ---
 
