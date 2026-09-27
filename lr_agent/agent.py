@@ -6,8 +6,10 @@ from typing import Any
 from .config import Settings
 from .llm import OpenAICompatibleClient
 from .memory import MemoryStore
-from .models import AgentStep, ChatResponse
+from .models import AgentPlan, AgentStep, ChatResponse, ReviewReport
+from .planner import Planner
 from .prompts import build_system_prompt
+from .reviewer import Reviewer
 from .tools import ToolRegistry
 
 
@@ -23,6 +25,8 @@ class Agent:
         self.llm = llm
         self.memory = memory
         self.tools = tools
+        self.planner = Planner(llm)
+        self.reviewer = Reviewer(llm)
 
     async def run(
         self,
@@ -37,12 +41,30 @@ class Agent:
         history = self.memory.recent_messages(session_id, limit=12)
         self.memory.add_message(session_id, "user", message)
 
+        plan: AgentPlan | None = None
+        if self.settings.enable_planning and mode in {"coder", "research"}:
+            plan = await self.planner.create(message, mode)
+
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": build_system_prompt(mode)},
             *history,
             {"role": "user", "content": message},
         ]
+        if plan is not None:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": (
+                        "Execution plan. Treat it as a concise checklist, not hidden reasoning. "
+                        "Adapt it when tool evidence requires a change:\n"
+                        + plan.model_dump_json()
+                    ),
+                }
+            )
+
         steps: list[AgentStep] = []
+        review: ReviewReport | None = None
+        review_retries = 0
 
         for index in range(1, self.settings.max_steps + 1):
             assistant = await self.llm.chat(messages, self.tools.specs())
@@ -51,11 +73,41 @@ class Agent:
 
             if not tool_calls:
                 answer = content.strip() or "任务已执行，但模型没有返回文本结果。"
+
+                if self.settings.enable_review and mode in {"coder", "research"}:
+                    review = await self.reviewer.review(
+                        task=message,
+                        plan=plan,
+                        steps=steps,
+                        proposed_answer=answer,
+                    )
+                    if (
+                        not review.passed
+                        and review_retries < self.settings.max_review_retries
+                        and review.next_actions
+                    ):
+                        review_retries += 1
+                        messages.append({"role": "assistant", "content": answer})
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": (
+                                    "Execution review found unresolved items. Continue the task "
+                                    "using tools when useful. Do not merely restate the review. "
+                                    "Resolve what can be resolved and verify it.\n"
+                                    + review.model_dump_json()
+                                ),
+                            }
+                        )
+                        continue
+
                 self.memory.add_message(session_id, "assistant", answer)
                 return ChatResponse(
                     session_id=session_id,
                     answer=answer,
                     steps=steps,
+                    plan=plan,
+                    review=review,
                 )
 
             messages.append(
@@ -113,5 +165,20 @@ class Agent:
         answer = (final.get("content") or "").strip()
         if not answer:
             answer = "已达到最大执行步数，且模型未返回最终总结。"
+
+        if self.settings.enable_review and mode in {"coder", "research"}:
+            review = await self.reviewer.review(
+                task=message,
+                plan=plan,
+                steps=steps,
+                proposed_answer=answer,
+            )
+
         self.memory.add_message(session_id, "assistant", answer)
-        return ChatResponse(session_id=session_id, answer=answer, steps=steps)
+        return ChatResponse(
+            session_id=session_id,
+            answer=answer,
+            steps=steps,
+            plan=plan,
+            review=review,
+        )
