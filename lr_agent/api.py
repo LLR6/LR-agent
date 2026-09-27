@@ -187,6 +187,36 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="Run not found")
         return item
 
+    @app.get("/api/runs/{run_id}/snapshots")
+    async def run_snapshots(run_id: str) -> list[dict[str, object]]:
+        item = memory.get_run(run_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail="Run not found")
+        snapshots = memory.list_run_snapshots(run_id)
+        return [
+            {
+                "path": snapshot["path"],
+                "original_kind": snapshot["original_kind"],
+                "original_hash": snapshot["original_hash"],
+                "final_kind": snapshot["final_kind"],
+                "final_hash": snapshot["final_hash"],
+                "created_at": snapshot["created_at"],
+            }
+            for snapshot in snapshots
+        ]
+
+    @app.post("/api/runs/{run_id}/rollback")
+    async def rollback_run(run_id: str) -> dict[str, object]:
+        item = memory.get_run(run_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail="Run not found")
+        if item.get("status") == "running":
+            raise HTTPException(
+                status_code=409,
+                detail="Cannot roll back a run while it is still running",
+            )
+        return await agent.journal.rollback(run_id)
+
     @app.post("/api/runs/{run_id}/resume-task", response_model=TaskStartResponse)
     async def resume_run_task(run_id: str) -> TaskStartResponse:
         item = memory.get_run(run_id)
