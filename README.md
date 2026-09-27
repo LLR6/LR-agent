@@ -2,7 +2,7 @@
 
 一个**真实可运行**的本地 AI Agent。它不是静态聊天页面：模型可以在受控工具权限下读取/修改工作区文件、执行白名单命令、访问公开 HTTP(S) 资源，并通过 SQLite 记住会话。
 
-> 当前版本：`0.7.0`。继续强化 Coding Agent 的“敢改、能验、可撤销”：现在每个 Run 会自动记录直接文件工具的原始状态和最终哈希，支持 **冲突检测后的安全回滚**，Web UI 和 CLI 都能恢复 Run 前的直接文件改动。
+> 当前版本：`0.8.0`。在 0.7 的可回滚 Coding Agent 基础上加入 **可选 Embeddings + FTS5 混合 RAG**：默认仍可纯本地关键词检索；开启后会为项目 Chunk 生成向量，并把语义相似度与词法检索共同用于 Coder / Research 的自动上下文召回。
 
 ## 已实现
 
@@ -15,6 +15,7 @@
 - 有界并发：默认最多同时运行 2 个后台任务，其余任务保持 queued；排队任务也可以取消
 - WebSocket 实时执行流：Planner、Run、Tool Step、Reviewer、完成状态会实时推送给 Web UI
 - 项目知识索引：可把 workspace 文本文件分块写入 SQLite，优先使用 FTS5/BM25 检索；Coder / Research 默认会自动检索相关上下文再规划和执行
+- 混合 RAG：可选调用 OpenAI-compatible `/embeddings` 接口，把持久化向量语义分数与 FTS5/LIKE 词法结果融合排序；Embedding 服务不可用时自动回退到词法检索
 - 检索安全：自动召回的项目内容会明确标记为 **UNTRUSTED PROJECT DATA**，不会被当作系统指令
 - 文件工具：列目录、全文搜索、按行读取、写文件、精确替换、单文件删除/移动、创建目录；写入/替换会返回统一 Diff
 - 项目识别：`project_inspect` 会识别 Python / Node / Rust / Go / Maven / Gradle / CMake / Git，并返回建议的测试/构建检查命令
@@ -305,7 +306,25 @@ LR_AGENT_AUTO_CONTEXT_RESULTS=6
 
 建立索引后，Coder / Research 模式会在每轮任务开始时自动搜索相关上下文，并把召回的文件片段显示在 Web UI 的 **CONTEXT** 区域。召回内容会被当作不可信项目数据，Agent 仍需在改动前重新读取关键文件。
 
-当前是本地 SQLite FTS5/BM25 检索，不依赖外部向量数据库；后续可以再加 embeddings 做混合检索。
+默认仍是本地 SQLite FTS5/BM25 检索，不依赖外部服务。需要语义召回时可以显式开启 Embeddings：
+
+```env
+LR_AGENT_KNOWLEDGE_EMBEDDINGS=true
+
+# 留空时复用 LR_AGENT_BASE_URL / LR_AGENT_API_KEY
+LR_AGENT_EMBEDDING_BASE_URL=
+LR_AGENT_EMBEDDING_API_KEY=
+
+LR_AGENT_EMBEDDING_MODEL=text-embedding-3-small
+LR_AGENT_EMBEDDING_BATCH_SIZE=32
+
+# 0~1，越大越偏向向量语义相似度
+LR_AGENT_HYBRID_VECTOR_WEIGHT=0.45
+```
+
+开启后，重建索引会先写入文本 Chunk，再批量请求 `/embeddings`，向量以二进制 float32 持久化到同一个 SQLite 知识库。查询时对 query 生成向量，并与词法结果进行融合排序。
+
+如果 Embedding Endpoint 请求失败，LR-Agent 会保留已经建立好的文本索引，并自动回退到 FTS5/LIKE，不会因为语义检索服务故障导致整个知识库不可用。
 
 ## 11. 后台任务与实时日志
 
@@ -528,6 +547,8 @@ pytest
 - 后台 Task 完成与服务重启后的 interrupted 恢复语义
 - WebSocket 事件源对应的任务事件历史
 - 项目知识索引、FTS/LIKE 搜索与依赖目录排除
+- Embedding 客户端请求顺序、重试、持久化向量、索引重建后的旧向量失效
+- 词法 + 向量混合检索，以及 Embedding 不可用时的词法回退
 - 文件统一 Diff 与 git status / diff
 - 子进程任务取消与实时 stdout/stderr 事件
 - 安全文件删除/移动/建目录、按行读取
@@ -559,6 +580,12 @@ GitHub Actions 会在 Python 3.11 和 3.12 上运行同一套测试，并额外�
 | `LR_AGENT_KNOWLEDGE_DATABASE` | `./data/knowledge.db` | 项目知识索引数据库 |
 | `LR_AGENT_KNOWLEDGE_MAX_FILES` | `3000` | 单次索引最大文件数 |
 | `LR_AGENT_KNOWLEDGE_MAX_FILE_BYTES` | `1000000` | 单文件索引大小上限 |
+| `LR_AGENT_KNOWLEDGE_EMBEDDINGS` | `false` | 是否为知识 Chunk 建立语义向量 |
+| `LR_AGENT_EMBEDDING_BASE_URL` | 空 | Embedding API 地址；空时复用模型 Base URL |
+| `LR_AGENT_EMBEDDING_API_KEY` | 空 | Embedding API Key；空时复用模型 API Key |
+| `LR_AGENT_EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding 模型名 |
+| `LR_AGENT_EMBEDDING_BATCH_SIZE` | `32` | 单次向量批处理大小 |
+| `LR_AGENT_HYBRID_VECTOR_WEIGHT` | `0.45` | 混合检索中的向量权重 |
 | `LR_AGENT_AUTO_CONTEXT` | `true` | Coder/Research 是否自动检索项目上下文 |
 | `LR_AGENT_AUTO_CONTEXT_RESULTS` | `6` | 自动召回最大结果数 |
 | `LR_AGENT_ALLOWED_COMMANDS` | 见上文 | 命令白名单 |
@@ -576,12 +603,12 @@ GitHub Actions 会在 Python 3.11 和 3.12 上运行同一套测试，并额外�
 
 后续可以继续做：
 
-1. embeddings + FTS5 的混合 RAG
-2. 多工作区与项目配置文件
-3. 可配置的审批策略（按命令、路径、仓库细分）
-4. 浏览器自动化
-5. Windows 桌面客户端与托盘常驻
-6. 考研 / 网安专用 Agent profile
+1. 多工作区与项目配置文件
+2. 可配置的审批策略（按命令、路径、仓库细分）
+3. 浏览器自动化
+4. Windows 桌面客户端与托盘常驻
+5. 考研 / 网安专用 Agent profile
+6. 向量增量更新与更大规模 ANN 索引
 
 ---
 
