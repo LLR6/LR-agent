@@ -24,6 +24,10 @@
 </p>
 
 <p align="center">
+  <a href="https://codespaces.new/LLR6/LR-agent?quickstart=1"><img alt="Open in GitHub Codespaces" src="https://github.com/codespaces/badge.svg"></a>
+</p>
+
+<p align="center">
   <img alt="CI" src="https://github.com/LLR6/LR-agent/actions/workflows/ci.yml/badge.svg">
   <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-blue">
   <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-green">
