@@ -1,5 +1,7 @@
 # LR-Agent
 
+<p align="center"><img src="./docs/media/lr-agent-social-preview.svg" alt="LR-Agent — Code that survives tomorrow" width="100%"></p>
+
 **A research-oriented coding agent that asks not only “does this patch work today?” — but “can it survive tomorrow?”**
 
 [中文 README](./README.md) · [5-minute ChronoForge demo](./docs/DEMO_CHRONOFORGE.md) · [Research](./docs/research/README.md) · [Contributing](./CONTRIBUTING.md)
