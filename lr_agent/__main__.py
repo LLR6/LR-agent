@@ -10,6 +10,7 @@ from rich.panel import Panel
 
 from .agent import Agent
 from .api import create_app
+from .chronoforge import ChronoForge, ChronoForgeError
 from .config import Settings
 from .genome import CausalGenomeEngine, GenomeError
 from .journal import WorkspaceJournal
@@ -320,6 +321,170 @@ def forge_promote(
         Panel(
             "\n".join(result["applied"]) or "No file changes",
             title=f"Promoted {result['candidate_id']}",
+        )
+    )
+
+
+def _print_chrono_report(report: dict[str, object]) -> None:
+    metrics = report.get("metrics") or {}
+    half_life = metrics.get("predicted_half_life") or {}
+    half_life_text = (
+        f">{half_life.get('generation')}"
+        if half_life.get("censored")
+        else str(half_life.get("generation"))
+    )
+    console.print(
+        Panel(
+            "\n".join(
+                [
+                    f"temporal survival: {metrics.get('temporal_survival')}",
+                    f"maintenance cost: {metrics.get('future_maintenance_cost')}",
+                    f"option value: {metrics.get('maintenance_option_value')}",
+                    f"invariant survival: {metrics.get('invariant_survival')}",
+                    f"dependency robustness: {metrics.get('dependency_robustness')}",
+                    f"patch surface stability: {metrics.get('patch_surface_stability')}",
+                    f"predicted half-life (repo generations): {half_life_text}",
+                ]
+            ),
+            title="ChronoForge Life Report",
+        )
+    )
+    curve = report.get("survival_curve") or []
+    if curve:
+        console.print(
+            "survival curve: "
+            + " → ".join(
+                f"g{item['generation']}={float(item['survival_rate']):.2f}"
+                for item in curve
+            )
+        )
+    deaths = report.get("death_modes") or {}
+    if deaths:
+        console.print("death modes: " + str(deaths))
+
+
+@cli.command("chrono")
+def chrono(
+    task: str = typer.Argument(
+        "",
+        help="Patch intent / future-aging target. Optional when using a Forge tournament.",
+    ),
+    tournament_id: str | None = typer.Option(
+        None,
+        "--tournament-id",
+        help="Age a completed Counterfactual Forge tournament candidate.",
+    ),
+    candidate_id: str | None = typer.Option(
+        None,
+        "--candidate-id",
+        help="Forge candidate id; defaults to winner.",
+    ),
+    generations: int | None = typer.Option(
+        None,
+        min=1,
+        max=10,
+        help="Sequential future generations per trajectory.",
+    ),
+    trajectories: int | None = typer.Option(
+        None,
+        min=1,
+        max=6,
+        help="Independent future timelines.",
+    ),
+) -> None:
+    """Age the current project or a Forge patch through synthetic future generations."""
+    settings = Settings()
+    settings.ensure_dirs()
+    engine = ChronoForge(settings)
+    try:
+        report = asyncio.run(
+            engine.run(
+                task=task,
+                tournament_id=tournament_id,
+                candidate_id=candidate_id,
+                generations=generations,
+                trajectories=trajectories,
+            )
+        )
+    except (ChronoForgeError, UniverseError, ValueError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1)
+    _print_chrono_report(report)
+
+
+@cli.command("chrono-list")
+def chrono_list(limit: int = typer.Option(30, help="Recent ChronoForge runs")) -> None:
+    """List prospective software-aging experiments."""
+    settings = Settings()
+    settings.ensure_dirs()
+    engine = ChronoForge(settings)
+    items = engine.list(min(max(limit, 1), 500))
+    if not items:
+        console.print("[yellow]No ChronoForge runs yet.[/yellow]")
+        return
+    for item in items:
+        metrics = (item.get("report") or {}).get("metrics") or {}
+        console.print(
+            f"[bold]{item['id']}[/bold]  {item['status']}  "
+            f"g={item['generations']} x t={item['trajectories']}  "
+            f"survival={metrics.get('temporal_survival', '-')}  "
+            f"{item['task'][:70]}"
+        )
+
+
+@cli.command("chrono-show")
+def chrono_show(run_id: str = typer.Argument(..., help="ChronoForge run id")) -> None:
+    """Show one ChronoForge life report."""
+    settings = Settings()
+    settings.ensure_dirs()
+    engine = ChronoForge(settings)
+    item = engine.get(run_id)
+    if item is None:
+        console.print(f"[red]ChronoForge run not found: {run_id}[/red]")
+        raise typer.Exit(code=1)
+    console.print(
+        Panel(
+            (
+                f"status: {item['status']}\n"
+                f"source: {item['source_type']} {item.get('source_ref') or ''}\n"
+                f"task: {item['task']}\n"
+                f"error: {item.get('error') or '-'}"
+            ),
+            title=f"ChronoForge · {run_id}",
+        )
+    )
+    if item.get("report") and item["status"] == "completed":
+        _print_chrono_report(item["report"])
+
+
+@cli.command("chrono-observe")
+def chrono_observe(
+    category: str = typer.Argument(..., help="Observed future category"),
+    note: str = typer.Argument(..., help="What actually changed in the real project"),
+    source: str = typer.Option("reality", help="Observation source label"),
+) -> None:
+    """Feed a real later project event back into the Future Model calibration store."""
+    settings = Settings()
+    settings.ensure_dirs()
+    engine = ChronoForge(settings)
+    try:
+        observation = engine.observe_future(
+            category=category,
+            note=note,
+            source=source,
+        )
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=2)
+    console.print(
+        Panel(
+            (
+                f"id: {observation['id']}\n"
+                f"category: {observation['category']}\n"
+                f"note: {observation['note']}\n"
+                f"calibration: {engine.calibration()['weights']}"
+            ),
+            title="Future observation recorded",
         )
     )
 
