@@ -45,6 +45,20 @@ def serve(
 ) -> None:
     """Start the local web UI and API."""
     settings = Settings()
+    normalized_host = host.strip().lower()
+    loopback_hosts = {"127.0.0.1", "localhost", "::1"}
+    if (
+        normalized_host not in loopback_hosts
+        and not settings.web_token
+        and not settings.allow_remote_without_token
+    ):
+        console.print(
+            "[red]Refusing to expose LR-Agent without authentication.[/red]\n"
+            "Set LR_AGENT_WEB_TOKEN or explicitly set "
+            "LR_AGENT_ALLOW_REMOTE_WITHOUT_TOKEN=true."
+        )
+        raise typer.Exit(code=2)
+
     app = create_app(settings)
     console.print(f"[bold]LR-Agent[/bold] -> http://{host}:{port}")
     uvicorn.run(app, host=host, port=port)
