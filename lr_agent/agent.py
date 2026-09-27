@@ -5,6 +5,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from .config import Settings
+from .journal import WorkspaceJournal
 from .llm import OpenAICompatibleClient
 from .memory import MemoryStore
 from .models import AgentPlan, AgentStep, ChatResponse, ReviewReport
@@ -28,6 +29,7 @@ class Agent:
         self.tools = tools
         self.planner = Planner(llm)
         self.reviewer = Reviewer(llm)
+        self.journal = WorkspaceJournal(settings, memory, tools)
 
     async def run(
         self,
@@ -239,12 +241,58 @@ class Agent:
                         payload.setdefault("tool", name)
                         await emit(payload)
 
-                    result = await self.tools.execute(
-                        name,
-                        arguments,
-                        approval_handler=approval_handler,
-                        event_handler=tool_event,
-                    )
+                    if (
+                        self.settings.enable_run_snapshots
+                        and self.tools.is_local_mutation(name)
+                    ):
+                        async with self.tools.mutation_lock:
+                            try:
+                                snapshot_paths = self.journal.capture_before(
+                                    run_id,
+                                    name,
+                                    arguments,
+                                )
+                            except Exception as exc:
+                                result = {
+                                    "ok": False,
+                                    "error": (
+                                        "Rollback snapshot failed before mutation: "
+                                        f"{type(exc).__name__}: {exc}"
+                                    ),
+                                }
+                            else:
+                                if snapshot_paths:
+                                    await emit(
+                                        {
+                                            "type": "snapshot",
+                                            "run_id": run_id,
+                                            "paths": snapshot_paths,
+                                        }
+                                    )
+                                result = await self.tools.execute(
+                                    name,
+                                    arguments,
+                                    approval_handler=approval_handler,
+                                    event_handler=tool_event,
+                                )
+                                try:
+                                    self.journal.capture_after(
+                                        run_id,
+                                        snapshot_paths,
+                                    )
+                                except Exception as exc:
+                                    result = dict(result)
+                                    result["journal_warning"] = (
+                                        "Mutation finished but rollback final-state "
+                                        f"capture failed: {type(exc).__name__}: {exc}"
+                                    )
+                    else:
+                        result = await self.tools.execute(
+                            name,
+                            arguments,
+                            approval_handler=approval_handler,
+                            event_handler=tool_event,
+                        )
 
                 serialized = json.dumps(result, ensure_ascii=False)
                 preview = serialized[:4000]
