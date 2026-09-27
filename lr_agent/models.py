@@ -11,6 +11,24 @@ class ChatRequest(BaseModel):
     mode: Literal["general", "coder", "research"] = "general"
 
 
+class PlanItem(BaseModel):
+    action: str
+    success_condition: str = ""
+
+
+class AgentPlan(BaseModel):
+    goal: str
+    steps: list[PlanItem]
+    success_criteria: list[str] = []
+
+
+class ReviewReport(BaseModel):
+    passed: bool
+    summary: str
+    problems: list[str] = []
+    next_actions: list[str] = []
+
+
 class AgentStep(BaseModel):
     index: int
     tool: str
@@ -23,6 +41,8 @@ class ChatResponse(BaseModel):
     session_id: str
     answer: str
     steps: list[AgentStep]
+    plan: AgentPlan | None = None
+    review: ReviewReport | None = None
 
 
 class SessionSummary(BaseModel):
