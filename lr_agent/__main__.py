@@ -114,6 +114,69 @@ def chat(
             console.print(f"[red]{exc}[/red]")
 
 
+@cli.command("index")
+def index_workspace() -> None:
+    """Build or rebuild the persistent workspace knowledge index."""
+    settings = Settings()
+    settings.ensure_dirs()
+    tools = ToolRegistry(settings)
+    result = tools.knowledge.rebuild()
+    console.print(
+        Panel(
+            "\n".join(
+                [
+                    f"files: {result['indexed_files']}",
+                    f"chunks: {result['indexed_chunks']}",
+                    f"skipped: {result['skipped_files']}",
+                    f"fts5: {result['fts_enabled']}",
+                    f"root: {result['root']}",
+                ]
+            ),
+            title="Knowledge index",
+        )
+    )
+
+
+@cli.command("search")
+def search_knowledge(
+    query: str = typer.Argument(..., help="Knowledge search query"),
+    limit: int = typer.Option(8, help="Maximum results"),
+) -> None:
+    """Search the persistent workspace knowledge index."""
+    settings = Settings()
+    settings.ensure_dirs()
+    tools = ToolRegistry(settings)
+    result = tools.knowledge.search(query, limit=min(max(limit, 1), 50))
+    console.print(f"[bold]mode:[/bold] {result['mode']}")
+    if not result["results"]:
+        console.print("[yellow]No results.[/yellow]")
+        return
+    for item in result["results"]:
+        console.print(
+            Panel(
+                item["snippet"],
+                title=f"{item['path']}:{item['line_start']}-{item['line_end']}",
+            )
+        )
+
+
+@cli.command("tasks")
+def tasks(limit: int = typer.Option(20, help="Number of recent tasks to show")) -> None:
+    """Show persisted background tasks."""
+    settings = Settings()
+    settings.ensure_dirs()
+    store = MemoryStore(settings.database)
+    items = store.list_task_records(min(max(limit, 1), 200))
+    if not items:
+        console.print("[yellow]No persisted tasks yet.[/yellow]")
+        return
+    for item in items:
+        console.print(
+            f"[bold]{item['id']}[/bold]  {item['status']}  "
+            f"{item['mode']}  {item['message'][:80]}"
+        )
+
+
 @cli.command()
 def runs(limit: int = typer.Option(20, help="Number of recent runs to show")) -> None:
     """Show persisted agent runs."""
