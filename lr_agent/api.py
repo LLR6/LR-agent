@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -88,6 +89,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             pass
         finally:
             task_manager.events.unsubscribe(task_id, queue)
+
+    @app.get("/api/knowledge/stats")
+    async def knowledge_stats() -> dict[str, object]:
+        return await asyncio.to_thread(tools.knowledge.stats)
+
+    @app.post("/api/knowledge/rebuild")
+    async def knowledge_rebuild() -> dict[str, object]:
+        return await asyncio.to_thread(tools.knowledge.rebuild)
+
+    @app.get("/api/knowledge/search")
+    async def knowledge_search(q: str, limit: int = 8) -> dict[str, object]:
+        if not q.strip():
+            raise HTTPException(status_code=400, detail="q cannot be empty")
+        safe_limit = min(max(limit, 1), 50)
+        return await asyncio.to_thread(tools.knowledge.search, q, safe_limit)
 
     @app.get("/api/sessions", response_model=list[SessionSummary])
     async def sessions() -> list[dict[str, str]]:
