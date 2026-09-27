@@ -26,6 +26,9 @@ class Settings(BaseSettings):
 
     workspace: Path = Path("./workspace")
     database: Path = Path("./data/lr_agent.db")
+    knowledge_database: Path = Path("./data/knowledge.db")
+    knowledge_max_files: int = 3000
+    knowledge_max_file_bytes: int = 1_000_000
 
     allowed_commands: str = "python,python3,pytest,git,gh,pip,uv,pwd,ls,dir,find,where"
     allow_destructive: bool = False
@@ -38,6 +41,7 @@ class Settings(BaseSettings):
     def ensure_dirs(self) -> None:
         self.workspace.mkdir(parents=True, exist_ok=True)
         self.database.parent.mkdir(parents=True, exist_ok=True)
+        self.knowledge_database.parent.mkdir(parents=True, exist_ok=True)
 
     @property
     def allowed_command_set(self) -> set[str]:
