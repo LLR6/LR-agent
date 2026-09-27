@@ -90,6 +90,21 @@ class MemoryStore:
 
                 CREATE INDEX IF NOT EXISTS idx_tasks_created_at
                     ON tasks(created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS approvals (
+                    id TEXT PRIMARY KEY,
+                    task_id TEXT NOT NULL,
+                    tool TEXT NOT NULL,
+                    arguments_json TEXT NOT NULL,
+                    preview TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(task_id) REFERENCES tasks(id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_approvals_task_id
+                    ON approvals(task_id, created_at);
                 """
             )
 
@@ -284,6 +299,84 @@ class MemoryStore:
         ]
         return result
 
+
+
+    def create_approval(
+        self,
+        *,
+        task_id: str,
+        tool: str,
+        arguments: dict[str, Any],
+        preview: str,
+    ) -> str:
+        approval_id = uuid.uuid4().hex
+        now = _now()
+        with self._lock, self._conn:
+            self._conn.execute(
+                """
+                INSERT INTO approvals(
+                    id, task_id, tool, arguments_json, preview,
+                    status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
+                """,
+                (
+                    approval_id,
+                    task_id,
+                    tool,
+                    json.dumps(arguments, ensure_ascii=False),
+                    preview,
+                    now,
+                    now,
+                ),
+            )
+        return approval_id
+
+    def update_approval_status(self, approval_id: str, status: str) -> None:
+        with self._lock, self._conn:
+            self._conn.execute(
+                """
+                UPDATE approvals
+                SET status = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (status, _now(), approval_id),
+            )
+
+    def get_approval(self, approval_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                """
+                SELECT id, task_id, tool, arguments_json, preview,
+                       status, created_at, updated_at
+                FROM approvals
+                WHERE id = ?
+                """,
+                (approval_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        result = dict(row)
+        result["arguments"] = json.loads(result.pop("arguments_json"))
+        return result
+
+    def list_approvals(self, task_id: str) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                """
+                SELECT id, task_id, tool, arguments_json, preview,
+                       status, created_at, updated_at
+                FROM approvals
+                WHERE task_id = ?
+                ORDER BY created_at ASC
+                """,
+                (task_id,),
+            ).fetchall()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item["arguments"] = json.loads(item.pop("arguments_json"))
+            result.append(item)
+        return result
 
     def create_task_record(
         self,
