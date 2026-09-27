@@ -1,5 +1,47 @@
 # Changelog
 
+## 1.1.0 - 2026-09-27
+
+### ChronoForge
+
+- Added Prospective Software Evolution Laboratory for aging current code or completed Forge candidates through sequential future repository generations.
+- Future generation N inherits the actual repository produced by generation N-1 instead of using independent hypothetical prompts.
+- Added tailored future-maintenance scenarios for dependency upgrades, API deprecation, adjacent features, schema migration, module refactors, platform/runtime changes, performance pressure and configuration-contract changes.
+- Added seed verification replay after every future-maintenance generation.
+- Added active Invariant DNA replay inside every future generation.
+- Added early trajectory death when seed behavior or invariants no longer survive.
+- Added Patch Life Report metrics: Temporal Survival, Future Maintenance Cost, Maintenance Option Value, Invariant Survival, Dependency Robustness, Patch Surface Stability and repository-generation half-life.
+- Added category-specific temporal death modes and survival curves.
+- Added Web UI ChronoForge control center and a “let Forge winner live through the future first” path.
+- Added CLI commands `chrono`, `chrono-list`, `chrono-show` and `chrono-observe`.
+- Added REST APIs for starting, inspecting, cancelling and calibrating ChronoForge runs.
+
+### Reality calibration
+
+- Added persistent real-future observations to `chronoforge.db`.
+- Added Laplace-smoothed category calibration weights so recorded real project evolution changes future-scenario priority.
+- Future observations are explicitly treated as calibration evidence, not guaranteed predictions.
+
+### Reliability and safety
+
+- ChronoForge runs persist as queued/running/completed/failed/cancelled/interrupted instead of disappearing after restart.
+- All future-maintainer Agents execute in shadow workspaces with GitHub writes and common external publication side effects disabled.
+- Project inspector recommended checks are replayed for current-workspace seeds.
+- Forge candidate verification commands are retained when aging a completed candidate.
+- Synthetic future scenarios and maintenance-option scores are explicitly documented as engineering heuristics, not formal forecasts or proofs.
+
+### Tests
+
+- Added sequential temporal-survival tests with real pytest replay.
+- Added repository-generation half-life assertions.
+- Added reality-observation calibration tests.
+- Added interrupted-run recovery tests.
+
+### Changed
+
+- Package and API version updated to 1.1.0.
+
+
 ## 1.0.0 - 2026-09-27
 
 ### Causal Genome Engine
