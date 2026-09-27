@@ -1,3 +1,5 @@
+import asyncio
+import sys
 from pathlib import Path
 
 import pytest
@@ -109,3 +111,25 @@ async def test_git_status_and_diff_are_read_only(registry: ToolRegistry) -> None
     status = await registry.execute("git_status", {})
     assert status["ok"] is True
     assert "tracked.txt" in status["result"]["stdout"]
+
+
+@pytest.mark.asyncio
+async def test_command_cancellation_stops_subprocess(registry: ToolRegistry) -> None:
+    registry.settings.allowed_commands = Path(sys.executable).name.replace(".exe", "")
+    task = asyncio.create_task(
+        registry.execute(
+            "run_command",
+            {
+                "argv": [
+                    sys.executable,
+                    "-c",
+                    "import time; time.sleep(30)",
+                ],
+                "timeout_s": 60,
+            },
+        )
+    )
+    await asyncio.sleep(0.1)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, timeout=3)
