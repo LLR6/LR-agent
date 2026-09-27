@@ -297,6 +297,10 @@
   <section class="trace">
     <h3>COUNTERFACTUAL FORGE</h3>
     <div id="forgePanel"><div class="meta">Forge 会让多个隔离 Agent 用不同策略解决同一任务，再按真实验证证据比较。</div></div>
+    <h3 class="section">CAUSAL GENOME</h3>
+    <div id="genomePanel"><div class="meta">正在读取策略基因、反基因和 Invariant DNA...</div></div>
+    <h3 class="section">EPISTEMIC TRIPWIRE</h3>
+    <div id="tripwirePanel"><div class="meta">尚未触发认知错误保险丝。</div></div>
     <h3 class="section">RUN</h3>
     <div id="runmeta"><div class="meta">尚未开始任务。</div></div>
     <h3 class="section">APPROVAL</h3>
@@ -321,6 +325,7 @@
   let activeTaskId = null;
   let liveSteps = [];
   let activeForgeId = null;
+  let activeGenomeJobId = null;
   const input = document.getElementById("input");
   const send = document.getElementById("send");
   const forgeTask = document.getElementById("forgeTask");
@@ -330,6 +335,8 @@
   const liveOutput = document.getElementById("liveOutput");
   const runMeta = document.getElementById("runmeta");
   const forgePanel = document.getElementById("forgePanel");
+  const genomePanel = document.getElementById("genomePanel");
+  const tripwirePanel = document.getElementById("tripwirePanel");
   const approvalBox = document.getElementById("approval");
   const contextBox = document.getElementById("context");
   const planBox = document.getElementById("plan");
@@ -362,6 +369,198 @@
       .replaceAll("&", "&amp;")
       .replaceAll("<", "&lt;")
       .replaceAll(">", "&gt;");
+  }
+
+  function genomeStatusCount(stats, key) {
+    return Number(stats?.genes_by_status?.[key] || 0);
+  }
+
+  async function refreshGenome() {
+    try {
+      const [statsResponse, genesResponse] = await Promise.all([
+        apiFetch("/api/genome/stats"),
+        apiFetch("/api/genome/genes?limit=6")
+      ]);
+      const stats = await statsResponse.json();
+      const genes = await genesResponse.json();
+      if (!statsResponse.ok) throw new Error(stats.detail || "Genome stats failed");
+      if (!genesResponse.ok) throw new Error(genes.detail || "Genome genes failed");
+
+      const header =
+        '<div class="forge-card">' +
+        '<b>Strategy Genome</b>' +
+        '<div style="margin-top:6px">active ' + genomeStatusCount(stats, "active") +
+        ' · quarantine ' + genomeStatusCount(stats, "quarantine") +
+        ' · contested ' + genomeStatusCount(stats, "contested") +
+        ' · contaminated ' + genomeStatusCount(stats, "contaminated") + '</div>' +
+        '<div>evidence ' + esc(stats.evidence_records || 0) +
+        ' · invariant DNA ' + esc(stats.active_invariants || 0) + '</div>' +
+        '<button id="checkInvariantDNA" style="width:100%;margin-top:8px">运行 Invariant DNA</button>' +
+        '</div>';
+
+      const cards = (genes || []).map(gene => {
+        const statusClass = gene.status === "active" ? "ok" :
+          (gene.status === "contaminated" || gene.status === "contested" ? "bad" : "");
+        return '<div class="forge-card">' +
+          '<div><b>' + esc(gene.name) + '</b> ' +
+          '<span class="' + statusClass + '">' + esc(gene.kind + " · " + gene.status) + '</span></div>' +
+          '<div>confidence ' + Number(gene.confidence || 0).toFixed(3) +
+          ' · effect ' + Number(gene.average_effect || 0).toFixed(2) + '</div>' +
+          '<div>+' + esc(gene.positive_count || 0) +
+          ' / -' + esc(gene.negative_count || 0) +
+          ' / ~' + esc(gene.neutral_count || 0) + '</div>' +
+          '<div class="approval-actions" style="margin-top:7px">' +
+          '<button data-gene-ablate="' + esc(gene.id) + '">A/B 消融</button>' +
+          '<button data-gene-falsify="' + esc(gene.id) + '">主动证伪</button>' +
+          '</div></div>';
+      }).join("");
+
+      genomePanel.innerHTML = header + (cards || '<div class="meta">还没有策略基因。</div>');
+
+      const invariantButton = document.getElementById("checkInvariantDNA");
+      if (invariantButton) invariantButton.addEventListener("click", checkInvariantDNA);
+
+      genomePanel.querySelectorAll("[data-gene-ablate]").forEach(button => {
+        button.addEventListener("click", () =>
+          startGeneExperiment(button.dataset.geneAblate, false)
+        );
+      });
+      genomePanel.querySelectorAll("[data-gene-falsify]").forEach(button => {
+        button.addEventListener("click", () =>
+          startGeneExperiment(button.dataset.geneFalsify, true)
+        );
+      });
+    } catch (e) {
+      genomePanel.innerHTML = '<div class="bad">Genome unavailable: ' + esc(e.message) + '</div>';
+    }
+  }
+
+  async function startGeneExperiment(geneId, falsification) {
+    if (activeGenomeJobId) {
+      window.alert("已有 Causal Genome 实验正在运行。");
+      return;
+    }
+    const task = window.prompt(
+      falsification
+        ? "输入一个真实任务/边界场景，主动尝试证伪这条 Gene："
+        : "输入一个真实 Coding 任务，运行 Treatment vs Control 消融："
+    );
+    if (!task || !task.trim()) return;
+
+    const trialsText = window.prompt("独立试验次数（1~5，建议 3）：", "3");
+    if (trialsText === null) return;
+    const trials = Math.min(Math.max(Number.parseInt(trialsText, 10) || 1, 1), 5);
+
+    genomePanel.innerHTML =
+      '<div class="meta">正在提交 ' + (falsification ? "Falsification" : "A/B Ablation") +
+      ' 实验...</div>';
+
+    try {
+      const r = await apiFetch(
+        "/api/genome/genes/" + encodeURIComponent(geneId) + "/experiments",
+        {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({
+            task: task.trim(),
+            trials,
+            falsification
+          })
+        }
+      );
+      const job = await r.json();
+      if (!r.ok) throw new Error(job.detail || "Genome experiment submission failed");
+      activeGenomeJobId = job.id;
+      await pollGenomeJob(job.id);
+    } catch (e) {
+      activeGenomeJobId = null;
+      genomePanel.innerHTML = '<div class="bad">Genome experiment failed: ' + esc(e.message) + '</div>';
+    }
+  }
+
+  async function pollGenomeJob(jobId) {
+    for (let attempt = 0; attempt < 1200; attempt++) {
+      const r = await apiFetch("/api/genome/jobs/" + encodeURIComponent(jobId));
+      const job = await r.json();
+      if (!r.ok) throw new Error(job.detail || "Genome experiment status failed");
+
+      if (["queued", "running"].includes(job.status)) {
+        genomePanel.innerHTML =
+          '<div class="forge-card"><b>Genome Experiment · ' + esc(job.status) + '</b>' +
+          '<div style="margin-top:6px">job: ' + esc(job.id) + '</div>' +
+          '<div>' + esc(job.experiment_type) + ' · trials ' + esc(job.trials) + '</div>' +
+          '<div style="margin-top:6px">' + esc(job.task) + '</div></div>';
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        continue;
+      }
+
+      activeGenomeJobId = null;
+      if (job.status === "completed" && job.result) {
+        const gene = job.result.gene || {};
+        const effects = (job.result.experiments || []).map(item =>
+          'trial ' + item.trial + ': ' + (item.effect ?? "-") + ' · ' + (item.outcome || item.status)
+        ).join("<br>");
+        genomePanel.innerHTML =
+          '<div class="forge-card winner"><b>' + esc(job.experiment_type) + ' complete</b>' +
+          '<div class="forge-score">' + esc(job.result.average_trial_effect ?? "-") + '</div>' +
+          '<div>gene status: ' + esc(gene.status || "-") +
+          ' · confidence ' + Number(gene.confidence || 0).toFixed(3) + '</div>' +
+          '<div style="margin-top:7px">' + effects + '</div></div>';
+        setTimeout(refreshGenome, 2500);
+        return;
+      }
+      genomePanel.innerHTML =
+        '<div class="bad">Genome experiment ' + esc(job.status) + ': ' +
+        esc(job.error || "no result") + '</div>';
+      return;
+    }
+    activeGenomeJobId = null;
+    throw new Error("Genome experiment polling timed out");
+  }
+
+  async function checkInvariantDNA() {
+    genomePanel.innerHTML = '<div class="meta">正在真实 workspace 执行 Invariant DNA...</div>';
+    try {
+      const r = await apiFetch("/api/invariants/check", {method: "POST"});
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || "Invariant check failed");
+      const rows = (data.results || []).map(item =>
+        '<div class="forge-card ' + (item.passed ? "winner" : "") + '">' +
+        '<b class="' + (item.passed ? "ok" : "bad") + '">' +
+        (item.passed ? "PASS" : "FAIL") + '</b> · ' + esc(item.name) + '</div>'
+      ).join("");
+      genomePanel.innerHTML =
+        '<div class="' + (data.passed === false ? "bad" : "ok") + '">' +
+        (data.passed === false ? "Invariant DNA violated" : "Invariant DNA verified") +
+        '</div>' + rows;
+      setTimeout(refreshGenome, 2500);
+    } catch (e) {
+      genomePanel.innerHTML = '<div class="bad">Invariant check failed: ' + esc(e.message) + '</div>';
+    }
+  }
+
+  async function importForgeWinnerAsGene(tournamentId) {
+    try {
+      const r = await apiFetch(
+        "/api/universes/" + encodeURIComponent(tournamentId) + "/gene",
+        {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({candidate_id: null, parent_ids: []})
+        }
+      );
+      const gene = await r.json();
+      if (!r.ok) throw new Error(gene.detail || "Gene import failed");
+      addMessage(
+        "assistant",
+        "Forge 胜者已进入 Causal Genome 隔离区（quarantine）。" +
+        "它不会因为一次成功就自动成为长期策略；需要 A/B 消融或证伪实验。\nGene: " +
+        gene.id
+      );
+      refreshGenome();
+    } catch (e) {
+      window.alert("导入 Gene 失败：" + e.message);
+    }
   }
 
   function resetLiveOutput(text = "等待命令输出...") {
@@ -731,6 +930,31 @@
       return;
     }
 
+    if (event.type === "genome_context") {
+      const genome = event.genome || {};
+      const genes = (genome.genes || []).map(item =>
+        item.name + " [" + item.kind + " · " + Number(item.confidence || 0).toFixed(2) + "]"
+      );
+      const invariants = (genome.invariants || []).map(item => item.name);
+      appendLiveOutput(
+        "stdout",
+        "\n[causal-genome] genes: " + (genes.join(", ") || "none") +
+        "\n[invariant-dna] " + (invariants.join(", ") || "none") + "\n"
+      );
+      return;
+    }
+
+    if (event.type === "tripwire") {
+      const item = event.tripwire || {};
+      tripwirePanel.innerHTML =
+        '<div class="forge-card"><b class="bad">TRIPWIRE</b>' +
+        '<div style="margin-top:6px">' + esc(item.reason || "epistemic risk") + '</div>' +
+        '<div>' + esc(item.path || item.signature || "") + '</div>' +
+        '<div>count: ' + esc(item.count || 0) + '</div>' +
+        '<div style="margin-top:7px">Agent 已被要求停止机械重复，重新检查假设并优先执行区分性诊断。</div></div>';
+      return;
+    }
+
     if (event.type === "approval_required") {
       renderApproval(event.task_id, event.approval);
       return;
@@ -901,15 +1125,23 @@
         esc(latestPromotion.proof_sha256) + '</div><div>verification: ' +
         esc(latestPromotion.verification?.status || "unknown") + '</div></div>'
       : '';
+    const genomeImport = data.status === "completed" && data.winner_id
+      ? '<button id="importForgeGene" style="width:100%;margin-top:10px">' +
+        '🧬 胜者送入 Genome 隔离区</button>'
+      : '';
     const promote = data.status === "completed" && data.winner_id
-      ? '<button class="primary" id="promoteForgeWinner" style="width:100%;margin-top:10px">' +
+      ? '<button class="primary" id="promoteForgeWinner" style="width:100%;margin-top:8px">' +
         '晋升胜者 + 真实环境复验</button>'
       : '';
 
     forgePanel.innerHTML =
       statusLine + '<div class="forge-grid" style="margin-top:9px">' + cards + '</div>' +
-      proof + promote;
+      proof + genomeImport + promote;
 
+    const importButton = document.getElementById("importForgeGene");
+    if (importButton) {
+      importButton.addEventListener("click", () => importForgeWinnerAsGene(data.id));
+    }
     const button = document.getElementById("promoteForgeWinner");
     if (button) {
       button.addEventListener("click", () => promoteForge(data.id));
@@ -1063,6 +1295,7 @@
     planBox.innerHTML = '<div class="meta">等待 Planner...</div>';
     reviewBox.innerHTML = '<div class="meta">等待 Reviewer...</div>';
     approvalBox.innerHTML = '<div class="meta">没有等待审批的操作。</div>';
+    tripwirePanel.innerHTML = '<div class="meta">尚未触发认知错误保险丝。</div>';
 
     try {
       const r = await apiFetch("/api/tasks", {
@@ -1117,12 +1350,14 @@
     reviewBox.innerHTML = '<div class="meta">执行完成后进行结果审查。</div>';
     approvalBox.innerHTML = '<div class="meta">没有等待审批的操作。</div>';
     forgePanel.innerHTML = '<div class="meta">Forge 会让多个隔离 Agent 用不同策略解决同一任务，再按真实验证证据比较。</div>';
+    tripwirePanel.innerHTML = '<div class="meta">尚未触发认知错误保险丝。</div>';
   });
 
   health();
   refreshSessions();
   refreshRuns();
   refreshKnowledgeStats();
+  refreshGenome();
   input.focus();
 </script>
 </body>
