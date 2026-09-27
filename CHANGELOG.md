@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.8.0 - 2026-09-27
+
+### Added
+
+- Optional OpenAI-compatible `/embeddings` client with retry handling.
+- Persistent float32 embeddings for workspace knowledge chunks in SQLite.
+- Hybrid RAG ranking that fuses lexical FTS5/LIKE retrieval with cosine semantic similarity.
+- Automatic hybrid retrieval for Coder / Research context when embeddings are enabled.
+- Embedding index status in the Web UI and CLI.
+- Tests for semantic retrieval, stale-vector invalidation, embedding ordering and retry behavior.
+
+### Reliability
+
+- Embeddings are opt-in and disabled by default.
+- Rebuilding the text index clears stale vectors before re-embedding.
+- If the embedding endpoint is unavailable, LR-Agent preserves the lexical index and falls back to FTS5/LIKE search.
+- Query embeddings must match the stored model and dimensions before semantic scores are used.
+
+### Changed
+
+- Package and API version updated to 0.8.0.
+
+
 ## 0.7.0 - 2026-09-27
 
 ### Added
