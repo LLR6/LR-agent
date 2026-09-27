@@ -266,6 +266,8 @@
     <div id="runmeta"><div class="meta">尚未开始任务。</div></div>
     <h3 class="section">APPROVAL</h3>
     <div id="approval"><div class="meta">没有等待审批的操作。</div></div>
+    <h3 class="section">CONTEXT</h3>
+    <div id="context"><div class="meta">索引后，Coder / Research 会自动检索项目上下文。</div></div>
     <h3 class="section">PLAN</h3>
     <div id="plan"><div class="meta">Coder / Research 模式会先生成可验证计划。</div></div>
     <h3 class="section">EXECUTION TRACE</h3>
@@ -285,6 +287,7 @@
   const steps = document.getElementById("steps");
   const runMeta = document.getElementById("runmeta");
   const approvalBox = document.getElementById("approval");
+  const contextBox = document.getElementById("context");
   const planBox = document.getElementById("plan");
   const reviewBox = document.getElementById("review");
   const mode = document.getElementById("mode");
@@ -365,6 +368,19 @@
 
     document.getElementById("approveApproval").addEventListener("click", () => decide(true));
     document.getElementById("denyApproval").addEventListener("click", () => decide(false));
+  }
+
+  function renderContext(items) {
+    if (!items || !items.length) {
+      contextBox.innerHTML = '<div class="meta">本轮没有检索到索引上下文。</div>';
+      return;
+    }
+    contextBox.innerHTML = items.map(item =>
+      '<div class="step"><div class="name">' +
+      esc(item.path || "") + ':' + esc(item.line_start || "") + '-' +
+      esc(item.line_end || "") + '</div><div class="preview">' +
+      esc(item.snippet || "") + '</div></div>'
+    ).join("");
   }
 
   function renderPlan(plan) {
@@ -522,6 +538,7 @@
       data.forEach(item => addMessage(item.role === "user" ? "user" : "assistant", item.content));
       steps.innerHTML = '<div class="meta">历史会话已加载；执行轨迹只显示当前新一轮。</div>';
       runMeta.innerHTML = '<div class="meta">发起下一轮任务后显示新的 run id。</div>';
+      contextBox.innerHTML = '<div class="meta">发起下一轮任务后显示检索上下文。</div>';
       planBox.innerHTML = '<div class="meta">历史消息已加载；计划不单独持久化显示。</div>';
       reviewBox.innerHTML = '<div class="meta">发起下一轮任务后显示新的审查结果。</div>';
       approvalBox.innerHTML = '<div class="meta">没有等待审批的操作。</div>';
@@ -550,6 +567,11 @@
       runMeta.innerHTML =
         '<div class="plan-card"><b>' + esc(event.status || "running") +
         '</b><div style="margin-top:6px">' + esc(event.task_id || "") + '</div></div>';
+      return;
+    }
+
+    if (event.type === "context") {
+      renderContext(event.context || []);
       return;
     }
 
@@ -690,6 +712,7 @@
     liveSteps = [];
     steps.innerHTML = '<div class="meta">等待实时工具事件...</div>';
     runMeta.innerHTML = '<div class="meta">正在提交后台任务...</div>';
+    contextBox.innerHTML = '<div class="meta">正在检索项目上下文...</div>';
     planBox.innerHTML = '<div class="meta">等待 Planner...</div>';
     reviewBox.innerHTML = '<div class="meta">等待 Reviewer...</div>';
     approvalBox.innerHTML = '<div class="meta">没有等待审批的操作。</div>';
@@ -739,6 +762,7 @@
     messages.innerHTML = '<div class="empty" id="empty">新会话已开始。</div>';
     steps.innerHTML = '<div class="meta">还没有工具调用。</div>';
     runMeta.innerHTML = '<div class="meta">尚未开始任务。</div>';
+    contextBox.innerHTML = '<div class="meta">索引后，Coder / Research 会自动检索项目上下文。</div>';
     planBox.innerHTML = '<div class="meta">Coder / Research 模式会先生成可验证计划。</div>';
     reviewBox.innerHTML = '<div class="meta">执行完成后进行结果审查。</div>';
     approvalBox.innerHTML = '<div class="meta">没有等待审批的操作。</div>';
