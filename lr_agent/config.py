@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     knowledge_database: Path = Path("./data/knowledge.db")
     knowledge_max_files: int = 3000
     knowledge_max_file_bytes: int = 1_000_000
+    knowledge_embeddings: bool = False
+    embedding_base_url: str = ""
+    embedding_api_key: str = ""
+    embedding_model: str = "text-embedding-3-small"
+    embedding_batch_size: int = 32
+    hybrid_vector_weight: float = 0.45
     auto_context: bool = True
     auto_context_results: int = 6
 
