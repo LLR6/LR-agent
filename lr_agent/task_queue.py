@@ -57,7 +57,13 @@ class TaskManager:
         self.memory = memory
         self.events = EventBroker()
         self._tasks: dict[str, asyncio.Task[None]] = {}
+        self._approval_futures: dict[str, asyncio.Future[bool]] = {}
+        self._approval_tasks: dict[str, str] = {}
+        self.approval_timeout_s = float(
+            getattr(getattr(agent, "settings", None), "approval_timeout_s", 600.0)
+        )
         self.memory.mark_incomplete_tasks_interrupted()
+        self.memory.mark_pending_approvals_expired()
 
     def submit(self, request: ChatRequest) -> str:
         task_id = self.memory.create_task_record(
@@ -88,12 +94,25 @@ class TaskManager:
             payload.setdefault("task_id", task_id)
             await self.events.publish(task_id, payload)
 
+        async def approval_handler(
+            tool: str,
+            arguments: dict[str, Any],
+            preview: str,
+        ) -> bool:
+            return await self.request_approval(
+                task_id,
+                tool=tool,
+                arguments=arguments,
+                preview=preview,
+            )
+
         try:
             response: ChatResponse = await self.agent.run(
                 request.message,
                 session_id=request.session_id,
                 mode=request.mode,
                 event_sink=event_sink,
+                approval_handler=approval_handler,
             )
             result = response.model_dump()
             self.memory.update_task_record(
@@ -147,6 +166,89 @@ class TaskManager:
         finally:
             self._tasks.pop(task_id, None)
 
+    async def request_approval(
+        self,
+        task_id: str,
+        *,
+        tool: str,
+        arguments: dict[str, Any],
+        preview: str,
+    ) -> bool:
+        approval_id = self.memory.create_approval(
+            task_id=task_id,
+            tool=tool,
+            arguments=arguments,
+            preview=preview,
+        )
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[bool] = loop.create_future()
+        self._approval_futures[approval_id] = future
+        self._approval_tasks[approval_id] = task_id
+
+        await self.events.publish(
+            task_id,
+            {
+                "type": "approval_required",
+                "task_id": task_id,
+                "approval": {
+                    "id": approval_id,
+                    "tool": tool,
+                    "arguments": arguments,
+                    "preview": preview,
+                    "status": "pending",
+                },
+            },
+        )
+
+        status = "denied"
+        try:
+            approved = await asyncio.wait_for(
+                future,
+                timeout=self.approval_timeout_s,
+            )
+            status = "approved" if approved else "denied"
+            return approved
+        except asyncio.TimeoutError:
+            status = "expired"
+            return False
+        finally:
+            self.memory.update_approval_status(approval_id, status)
+            self._approval_futures.pop(approval_id, None)
+            self._approval_tasks.pop(approval_id, None)
+            await self.events.publish(
+                task_id,
+                {
+                    "type": "approval_resolved",
+                    "task_id": task_id,
+                    "approval_id": approval_id,
+                    "status": status,
+                },
+            )
+
+    def decide_approval(
+        self,
+        task_id: str,
+        approval_id: str,
+        *,
+        approved: bool,
+    ) -> bool:
+        item = self.memory.get_approval(approval_id)
+        if (
+            item is None
+            or item["task_id"] != task_id
+            or item["status"] != "pending"
+        ):
+            return False
+
+        future = self._approval_futures.get(approval_id)
+        if future is None or future.done():
+            return False
+        future.set_result(approved)
+        return True
+
+    def approvals(self, task_id: str) -> list[dict[str, Any]]:
+        return self.memory.list_approvals(task_id)
+
     def get(self, task_id: str) -> dict[str, Any] | None:
         return self.memory.get_task_record(task_id)
 
@@ -154,6 +256,13 @@ class TaskManager:
         return self.memory.list_task_records(limit)
 
     async def cancel(self, task_id: str) -> bool:
+        for approval_id, approval_task_id in list(self._approval_tasks.items()):
+            if approval_task_id != task_id:
+                continue
+            future = self._approval_futures.get(approval_id)
+            if future is not None and not future.done():
+                future.set_result(False)
+
         handle = self._tasks.get(task_id)
         if handle is None or handle.done():
             return False
