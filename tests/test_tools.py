@@ -175,3 +175,45 @@ async def test_approval_mode_blocks_write_without_handler(registry: ToolRegistry
     assert result["ok"] is False
     assert "requires interactive approval" in result["error"]
     assert not (registry.root / "blocked.txt").exists()
+
+
+@pytest.mark.asyncio
+async def test_command_output_streams_live_events(registry: ToolRegistry) -> None:
+    executable = Path(sys.executable).name.replace(".exe", "")
+    registry.settings.allowed_commands = executable
+    events = []
+
+    async def on_event(event):
+        events.append(event)
+
+    result = await registry.execute(
+        "run_command",
+        {
+            "argv": [
+                sys.executable,
+                "-c",
+                (
+                    "import sys; "
+                    "print('live-stdout', flush=True); "
+                    "print('live-stderr', file=sys.stderr, flush=True)"
+                ),
+            ]
+        },
+        event_handler=on_event,
+    )
+
+    assert result["ok"] is True
+    assert "live-stdout" in result["result"]["stdout"]
+    assert "live-stderr" in result["result"]["stderr"]
+    assert any(
+        event["type"] == "command_output"
+        and event["stream"] == "stdout"
+        and "live-stdout" in event["text"]
+        for event in events
+    )
+    assert any(
+        event["type"] == "command_output"
+        and event["stream"] == "stderr"
+        and "live-stderr" in event["text"]
+        for event in events
+    )
