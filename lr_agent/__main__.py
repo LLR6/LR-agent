@@ -86,6 +86,74 @@ def chat(
 
 
 @cli.command()
+def runs(limit: int = typer.Option(20, help="Number of recent runs to show")) -> None:
+    """Show persisted agent runs."""
+    settings = Settings()
+    settings.ensure_dirs()
+    store = MemoryStore(settings.database)
+    items = store.list_runs(min(max(limit, 1), 200))
+    if not items:
+        console.print("[yellow]No persisted runs yet.[/yellow]")
+        return
+    for item in items:
+        console.print(
+            f"[bold]{item['id']}[/bold]  {item['status']}  "
+            f"{item['mode']}  {item['task'][:80]}"
+        )
+
+
+@cli.command()
+def resume(run_id: str = typer.Argument(..., help="Persisted run id")) -> None:
+    """Resume a previous run using its stored plan and tool evidence."""
+    settings = Settings()
+    settings.ensure_dirs()
+    store = MemoryStore(settings.database)
+    item = store.get_run(run_id)
+    if item is None:
+        console.print(f"[red]Run not found: {run_id}[/red]")
+        raise typer.Exit(code=1)
+
+    evidence = {
+        "previous_run_id": run_id,
+        "previous_status": item.get("status"),
+        "original_task": item.get("task"),
+        "plan": item.get("plan"),
+        "review": item.get("review"),
+        "steps": (item.get("steps") or [])[-20:],
+        "previous_answer": item.get("answer"),
+    }
+    import json
+
+    prompt = (
+        "Resume this previous LR-Agent run. Re-check current workspace state before "
+        "assuming earlier state is still valid. Continue unresolved work, use tools "
+        "for verification, and do not merely summarize the old run.\n\n"
+        + json.dumps(evidence, ensure_ascii=False)
+    )
+    agent = Agent(
+        settings,
+        OpenAICompatibleClient(settings),
+        store,
+        ToolRegistry(settings),
+    )
+
+    async def execute() -> None:
+        response = await agent.run(
+            prompt,
+            session_id=str(item["session_id"]),
+            mode=str(item["mode"]),
+        )
+        console.print(Panel(response.answer, title=f"LR-Agent · {response.status}"))
+        console.print(f"run_id: {response.run_id}")
+
+    try:
+        asyncio.run(execute())
+    except LLMError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1)
+
+
+@cli.command()
 def doctor() -> None:
     """Check local configuration and verify the model endpoint with a tiny request."""
     settings = Settings()
