@@ -14,6 +14,7 @@ from .journal import WorkspaceJournal
 from .llm import LLMError, OpenAICompatibleClient
 from .memory import MemoryStore
 from .tools import ToolRegistry
+from .universes import UniverseError, UniverseLab
 
 cli = typer.Typer(help="LR-Agent local autonomous assistant")
 console = Console()
@@ -163,6 +164,162 @@ def search_knowledge(
                 title=f"{item['path']}:{item['line_start']}-{item['line_end']}",
             )
         )
+
+
+@cli.command("forge")
+def forge(
+    task: str = typer.Argument(..., help="Coding task to solve in parallel shadow universes"),
+    candidates: int = typer.Option(3, min=2, max=4, help="Parallel candidate count"),
+    evolve: bool = typer.Option(
+        False,
+        "--evolve",
+        help="Run one extra strategy evolved from first-round evidence",
+    ),
+    promote: bool = typer.Option(
+        False,
+        "--promote",
+        help="Promote the evidence-score winner after confirmation",
+    ),
+) -> None:
+    """Run Counterfactual Forge: isolated competing coding agents + evidence ranking."""
+    settings = Settings()
+    settings.ensure_dirs()
+    lab = UniverseLab(settings)
+
+    console.print(
+        Panel(
+            (
+                f"task: {task}\n"
+                f"candidates: {candidates}\n"
+                f"evolve: {evolve}\n\n"
+                "Each candidate runs in an isolated shadow copy. "
+                "Remote writes are blocked in shadow mode."
+            ),
+            title="Counterfactual Forge",
+        )
+    )
+
+    tournament = asyncio.run(
+        lab.run(task, candidates=candidates, evolve=evolve)
+    )
+    if tournament["status"] != "completed":
+        console.print(f"[red]Forge failed:[/red] {tournament.get('error')}")
+        raise typer.Exit(code=1)
+
+    for item in sorted(
+        tournament["candidates"],
+        key=lambda value: float(value["evidence"]["score"]),
+        reverse=True,
+    ):
+        winner = " ★ WINNER" if item["id"] == tournament["winner_id"] else ""
+        evidence = item["evidence"]
+        console.print(
+            Panel(
+                "\n".join(
+                    [
+                        f"score: {evidence['score']}",
+                        f"status: {item['status']}",
+                        f"verified checks: {evidence['verification_passes']}",
+                        f"tool failures: {evidence['tool_failures']}",
+                        f"changed files: {evidence['changed_files']}",
+                        f"review passed: {evidence['review_passed']}",
+                    ]
+                ),
+                title=f"{item['strategy']['name']}{winner}",
+            )
+        )
+
+    console.print(f"tournament_id: [bold]{tournament['id']}[/bold]")
+    console.print(f"winner: [bold]{tournament['winner_id']}[/bold]")
+
+    if promote:
+        answer = console.input(
+            "[bold yellow]Promote the winner into the real workspace? [y/N]: [/bold yellow]"
+        ).strip().lower()
+        if answer not in {"y", "yes"}:
+            console.print("Promotion cancelled. Shadow universes were preserved.")
+            return
+        result = asyncio.run(lab.promote(tournament["id"]))
+        if not result["ok"]:
+            console.print("[red]Promotion blocked by workspace conflicts.[/red]")
+            for conflict in result["conflicts"]:
+                console.print(f"[red]{conflict['path']}[/red]")
+            raise typer.Exit(code=2)
+        console.print(
+            Panel(
+                "\n".join(result["applied"]) or "No file changes",
+                title="Winner promoted",
+            )
+        )
+
+
+@cli.command("forge-list")
+def forge_list(limit: int = typer.Option(20, help="Recent tournaments")) -> None:
+    """List Counterfactual Forge tournaments."""
+    settings = Settings()
+    settings.ensure_dirs()
+    lab = UniverseLab(settings)
+    items = lab.list(limit)
+    if not items:
+        console.print("[yellow]No forge tournaments yet.[/yellow]")
+        return
+    for item in items:
+        console.print(
+            f"[bold]{item['id']}[/bold]  {item['status']}  "
+            f"winner={item.get('winner_id') or '-'}  {item['task'][:70]}"
+        )
+
+
+@cli.command("forge-promote")
+def forge_promote(
+    tournament_id: str = typer.Argument(..., help="Counterfactual tournament id"),
+    candidate_id: str | None = typer.Option(
+        None,
+        help="Candidate id; defaults to evidence-score winner",
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+) -> None:
+    """Promote one counterfactual candidate after conflict checking."""
+    settings = Settings()
+    settings.ensure_dirs()
+    lab = UniverseLab(settings)
+    try:
+        item = lab.get(tournament_id)
+    except UniverseError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1)
+
+    selected = candidate_id or item.get("winner_id")
+    if not yes:
+        console.print(
+            f"Selected candidate: [bold]{selected}[/bold]\n"
+            "Promotion refuses to overwrite files changed since the tournament baseline."
+        )
+        answer = console.input("[bold]Continue? [y/N]: [/bold]").strip().lower()
+        if answer not in {"y", "yes"}:
+            console.print("Cancelled.")
+            return
+
+    try:
+        result = asyncio.run(
+            lab.promote(tournament_id, candidate_id=candidate_id)
+        )
+    except UniverseError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1)
+
+    if not result["ok"]:
+        console.print("[red]Promotion blocked by conflicts.[/red]")
+        for conflict in result["conflicts"]:
+            console.print(f"[red]{conflict['path']}[/red]")
+        raise typer.Exit(code=2)
+
+    console.print(
+        Panel(
+            "\n".join(result["applied"]) or "No file changes",
+            title=f"Promoted {result['candidate_id']}",
+        )
+    )
 
 
 @cli.command("tasks")
