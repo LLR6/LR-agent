@@ -1,0 +1,38 @@
+name: Render ChronoForge showcase GIF
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "scripts/render_chronoforge_showcase.py"
+      - ".github/workflows/render-chronoforge-showcase.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Pillow
+        run: python -m pip install --disable-pip-version-check pillow
+
+      - name: Render GIF
+        run: python scripts/render_chronoforge_showcase.py
+
+      - name: Commit rendered GIF
+        run: |
+          if git diff --quiet -- docs/media/chronoforge-showcase.gif &&              git ls-files --error-unmatch docs/media/chronoforge-showcase.gif >/dev/null 2>&1; then
+            echo "GIF already up to date."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/media/chronoforge-showcase.gif
+          git commit -m "docs: render ChronoForge showcase GIF"
+          git push
