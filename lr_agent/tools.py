@@ -368,6 +368,7 @@ class ToolRegistry:
         arguments: dict[str, Any],
         *,
         approval_handler: Callable[[str, dict[str, Any], str], Awaitable[bool]] | None = None,
+        event_handler: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> dict[str, Any]:
         try:
             if self._requires_approval(name):
@@ -394,7 +395,10 @@ class ToolRegistry:
             elif name == "git_diff":
                 value = await self._git_diff(**arguments)
             elif name == "run_command":
-                value = await self._run_command(**arguments)
+                value = await self._run_command(
+                    **arguments,
+                    event_handler=event_handler,
+                )
             elif name == "http_get":
                 value = await self._http_get(**arguments)
             elif name == "knowledge_index":
@@ -584,6 +588,7 @@ class ToolRegistry:
         argv: list[str],
         cwd: str = ".",
         timeout_s: float | None = None,
+        event_handler: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> dict[str, Any]:
         if not argv or not all(isinstance(item, str) and item for item in argv):
             raise ToolError("argv must be a non-empty list of strings")
@@ -637,32 +642,80 @@ class ToolRegistry:
             stderr=asyncio.subprocess.PIPE,
         )
         timeout = timeout_s or self.settings.command_timeout_s
+        stdout_tail = ""
+        stderr_tail = ""
+        stdout_chars = 0
+        stderr_chars = 0
+
+        async def emit_output(stream_name: str, text: str) -> None:
+            if event_handler is None or not text:
+                return
+            try:
+                await event_handler(
+                    {
+                        "type": "command_output",
+                        "stream": stream_name,
+                        "text": text,
+                        "argv": argv,
+                    }
+                )
+            except Exception:
+                return
+
+        async def pump(
+            stream: asyncio.StreamReader | None,
+            stream_name: str,
+        ) -> tuple[str, int]:
+            if stream is None:
+                return "", 0
+            tail = ""
+            total = 0
+            while True:
+                chunk = await stream.read(2048)
+                if not chunk:
+                    break
+                text = chunk.decode("utf-8", errors="replace")
+                total += len(text)
+                tail = (tail + text)[-20000:]
+                await emit_output(stream_name, text)
+            return tail, total
+
+        stdout_task = asyncio.create_task(pump(process.stdout, "stdout"))
+        stderr_task = asyncio.create_task(pump(process.stderr, "stderr"))
+
         try:
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                process.communicate(),
+            stdout_result, stderr_result, _ = await asyncio.wait_for(
+                asyncio.gather(stdout_task, stderr_task, process.wait()),
                 timeout=timeout,
             )
+            stdout_tail, stdout_chars = stdout_result
+            stderr_tail, stderr_chars = stderr_result
         except asyncio.TimeoutError as exc:
-            process.kill()
+            if process.returncode is None:
+                process.kill()
             await process.wait()
+            for task in (stdout_task, stderr_task):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(stdout_task, stderr_task, return_exceptions=True)
             raise ToolError(f"Command timed out after {timeout} seconds") from exc
         except asyncio.CancelledError:
             if process.returncode is None:
                 process.kill()
                 await process.wait()
+            for task in (stdout_task, stderr_task):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(stdout_task, stderr_task, return_exceptions=True)
             raise
 
-        stdout_full = stdout_bytes.decode("utf-8", errors="replace")
-        stderr_full = stderr_bytes.decode("utf-8", errors="replace")
-        stdout = stdout_full[-20000:]
-        stderr = stderr_full[-20000:]
         return {
             "argv": argv,
             "cwd": run_cwd.relative_to(self.root).as_posix() or ".",
             "returncode": process.returncode,
-            "stdout": stdout,
-            "stderr": stderr,
-            "output_truncated": len(stdout_full) > 20000 or len(stderr_full) > 20000,
+            "stdout": stdout_tail,
+            "stderr": stderr_tail,
+            "output_truncated": stdout_chars > 20000 or stderr_chars > 20000,
         }
 
     @staticmethod
