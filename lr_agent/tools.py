@@ -8,7 +8,6 @@ import json
 import os
 import shutil
 import socket
-import subprocess
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urljoin, urlparse
@@ -321,11 +320,11 @@ class ToolRegistry:
             elif name == "replace_in_file":
                 value = self._replace_in_file(**arguments)
             elif name == "git_status":
-                value = await asyncio.to_thread(self._git_status, **arguments)
+                value = await self._git_status(**arguments)
             elif name == "git_diff":
-                value = await asyncio.to_thread(self._git_diff, **arguments)
+                value = await self._git_diff(**arguments)
             elif name == "run_command":
-                value = await asyncio.to_thread(self._run_command, **arguments)
+                value = await self._run_command(**arguments)
             elif name == "http_get":
                 value = await self._http_get(**arguments)
             elif name == "knowledge_index":
@@ -494,10 +493,10 @@ class ToolRegistry:
             "diff_truncated": diff_truncated,
         }
 
-    def _git_status(self, cwd: str = ".") -> dict[str, Any]:
-        return self._run_command(["git", "status", "--short"], cwd=cwd)
+    async def _git_status(self, cwd: str = ".") -> dict[str, Any]:
+        return await self._run_command(["git", "status", "--short"], cwd=cwd)
 
-    def _git_diff(
+    async def _git_diff(
         self,
         cwd: str = ".",
         staged: bool = False,
@@ -508,9 +507,9 @@ class ToolRegistry:
             argv.append("--cached")
         if path:
             argv.extend(["--", path])
-        return self._run_command(argv, cwd=cwd)
+        return await self._run_command(argv, cwd=cwd)
 
-    def _run_command(
+    async def _run_command(
         self,
         argv: list[str],
         cwd: str = ".",
@@ -560,25 +559,40 @@ class ToolRegistry:
             "TERM",
         }
         env = {k: v for k, v in os.environ.items() if k.upper() in safe_env_keys}
-        result = subprocess.run(
-            argv,
+        process = await asyncio.create_subprocess_exec(
+            *argv,
             cwd=run_cwd,
             env=env,
-            capture_output=True,
-            text=True,
-            timeout=timeout_s or self.settings.command_timeout_s,
-            shell=False,
-            errors="replace",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
-        stdout = result.stdout[-20000:]
-        stderr = result.stderr[-20000:]
+        timeout = timeout_s or self.settings.command_timeout_s
+        try:
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                process.communicate(),
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError as exc:
+            process.kill()
+            await process.wait()
+            raise ToolError(f"Command timed out after {timeout} seconds") from exc
+        except asyncio.CancelledError:
+            if process.returncode is None:
+                process.kill()
+                await process.wait()
+            raise
+
+        stdout_full = stdout_bytes.decode("utf-8", errors="replace")
+        stderr_full = stderr_bytes.decode("utf-8", errors="replace")
+        stdout = stdout_full[-20000:]
+        stderr = stderr_full[-20000:]
         return {
             "argv": argv,
             "cwd": run_cwd.relative_to(self.root).as_posix() or ".",
-            "returncode": result.returncode,
+            "returncode": process.returncode,
             "stdout": stdout,
             "stderr": stderr,
-            "output_truncated": len(result.stdout) > 20000 or len(result.stderr) > 20000,
+            "output_truncated": len(stdout_full) > 20000 or len(stderr_full) > 20000,
         }
 
     @staticmethod
