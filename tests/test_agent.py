@@ -16,6 +16,15 @@ class FakeLLM:
         self.calls += 1
         if self.calls == 1:
             return {
+                "content": (
+                    '{"goal":"create hello.txt","steps":['
+                    '{"action":"write the file","success_condition":"file exists"},'
+                    '{"action":"verify it","success_condition":"content is hi"}'
+                    '],"success_criteria":["hello.txt contains hi"]}'
+                )
+            }
+        if self.calls == 2:
+            return {
                 "content": "",
                 "tool_calls": [
                     {
@@ -28,7 +37,16 @@ class FakeLLM:
                     }
                 ],
             }
-        return {"content": "done"}
+        if self.calls == 3:
+            return {"content": "done"}
+        if self.calls == 4:
+            return {
+                "content": (
+                    '{"passed":true,"summary":"file was created",'
+                    '"problems":[],"next_actions":[]}'
+                )
+            }
+        raise AssertionError(f"unexpected LLM call {self.calls}")
 
 
 @pytest.mark.asyncio
@@ -37,6 +55,8 @@ async def test_agent_executes_tool_and_returns_answer(tmp_path: Path) -> None:
         workspace=tmp_path / "workspace",
         database=tmp_path / "memory.db",
         max_steps=4,
+        enable_planning=True,
+        enable_review=True,
     )
     settings.ensure_dirs()
     agent = Agent(
@@ -49,6 +69,10 @@ async def test_agent_executes_tool_and_returns_answer(tmp_path: Path) -> None:
     response = await agent.run("create a file", mode="coder")
 
     assert response.answer == "done"
+    assert response.plan is not None
+    assert response.plan.goal == "create hello.txt"
+    assert response.review is not None
+    assert response.review.passed is True
     assert response.steps[0].tool == "write_file"
     assert response.steps[0].ok is True
     assert (settings.workspace / "hello.txt").read_text() == "hi"
