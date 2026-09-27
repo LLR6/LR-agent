@@ -468,6 +468,19 @@ class MemoryStore:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def mark_pending_approvals_expired(self) -> int:
+        now = _now()
+        with self._lock, self._conn:
+            cursor = self._conn.execute(
+                """
+                UPDATE approvals
+                SET status = 'expired', updated_at = ?
+                WHERE status = 'pending'
+                """,
+                (now,),
+            )
+        return int(cursor.rowcount)
+
     def mark_incomplete_tasks_interrupted(self) -> int:
         now = _now()
         with self._lock, self._conn:
