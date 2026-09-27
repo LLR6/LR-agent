@@ -176,6 +176,7 @@ If a prior system is later found, the novelty document should be updated rather 
 - [Experimental Protocol and Benchmarks](./EXPERIMENTS.md)
 - [Research Roadmap](./ROADMAP.md)
 - [Bibliography](./BIBLIOGRAPHY.md)
+- [Research-to-Implementation Map](./IMPLEMENTATION_MAP.md)
 
 ## Core research hypotheses
 
