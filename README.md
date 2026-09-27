@@ -8,7 +8,7 @@
 
 - OpenAI-compatible 模型接口，可接云端兼容接口或本地 Ollama 等服务
 - Tool Calling 自主循环：模型 -> 工具 -> 工具结果 -> 模型，最多执行 `LR_AGENT_MAX_STEPS` 步
-- 文件工具：列目录、读文件、写文件、精确替换
+- 文件工具：列目录、全文搜索、读文件、写文件、精确替换
 - 命令工具：**不经过 shell**，只允许配置白名单中的可执行程序
 - HTTP 工具：GET 公网资源；默认拦截 localhost / 私网 / link-local / reserved 地址
 - SQLite 会话记忆
@@ -129,6 +129,7 @@ LLM
   ↓ tool_calls
 ToolRegistry
   ├─ list_files
+  ├─ search_files
   ├─ read_file
   ├─ write_file
   ├─ replace_in_file
