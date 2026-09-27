@@ -61,6 +61,7 @@ async def test_counterfactual_tournament_is_isolated_and_promotes_winner(
         database=tmp_path / "memory.db",
         knowledge_database=tmp_path / "knowledge.db",
         universe_root=tmp_path / "universes",
+        genome_database=tmp_path / "genome.db",
         universe_candidates=2,
     )
     settings.ensure_dirs()
@@ -108,6 +109,7 @@ async def test_promotion_refuses_to_overwrite_post_tournament_changes(
         database=tmp_path / "memory.db",
         knowledge_database=tmp_path / "knowledge.db",
         universe_root=tmp_path / "universes",
+        genome_database=tmp_path / "genome.db",
         universe_candidates=2,
     )
     settings.ensure_dirs()
@@ -131,6 +133,7 @@ async def test_shadow_mode_blocks_remote_git_push(tmp_path: Path) -> None:
         workspace=workspace,
         database=tmp_path / "memory.db",
         knowledge_database=tmp_path / "knowledge.db",
+        genome_database=tmp_path / "genome.db",
         shadow_mode=True,
         allowed_commands="git",
     )
@@ -197,6 +200,7 @@ async def test_proof_carrying_promotion_rolls_back_when_real_verification_fails(
         database=tmp_path / "memory.db",
         knowledge_database=tmp_path / "knowledge.db",
         universe_root=tmp_path / "universes",
+        genome_database=tmp_path / "genome.db",
         universe_candidates=2,
     )
     settings.ensure_dirs()
