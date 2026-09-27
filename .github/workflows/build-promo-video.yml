@@ -7,6 +7,8 @@ on:
     paths:
       - "docs/media/chronoforge-showcase.gif"
       - ".github/workflows/build-promo-video.yml"
+      - "README.md"
+      - "README_EN.md"
   workflow_dispatch:
 
 permissions:
