@@ -15,6 +15,7 @@ from typing import Any
 
 from .agent import Agent
 from .config import Settings
+from .genome_store import GenomeStore
 from .llm import OpenAICompatibleClient
 from .memory import MemoryStore
 from .models import AgentStep, ChatResponse
@@ -129,6 +130,11 @@ class UniverseLab:
         self.root = settings.universe_root.resolve()
         self.root.mkdir(parents=True, exist_ok=True)
         self._agent_runner = agent_runner
+        self.genome = (
+            GenomeStore(settings.genome_database)
+            if settings.invariants_enabled
+            else None
+        )
         self._jobs: dict[str, asyncio.Task[Any]] = {}
         self._promotion_lock = asyncio.Lock()
         self._mark_interrupted()
@@ -814,6 +820,81 @@ class UniverseLab:
             "commands": results,
         }
 
+    async def _verify_invariant_dna(self) -> dict[str, Any]:
+        if self.genome is None:
+            return {
+                "enabled": False,
+                "passed": None,
+                "results": [],
+            }
+
+        invariants = self.genome.list_invariants(status="active", limit=500)
+        if not invariants:
+            return {
+                "enabled": True,
+                "passed": True,
+                "results": [],
+            }
+
+        verify_settings = self.settings.model_copy(
+            deep=True,
+            update={
+                "approval_mode": "off",
+                "shadow_mode": False,
+                "allow_github_write": False,
+            },
+        )
+        tools = ToolRegistry(verify_settings)
+        overall = True
+        results: list[dict[str, Any]] = []
+
+        for invariant in invariants:
+            checks: list[dict[str, Any]] = []
+            invariant_passed = True
+            for command in invariant["commands"]:
+                outcome = await tools.execute("run_command", dict(command))
+                payload = outcome.get("result") or {}
+                returncode = payload.get("returncode") if outcome.get("ok") else None
+                passed = bool(outcome.get("ok")) and returncode == 0
+                checks.append(
+                    {
+                        "command": command,
+                        "passed": passed,
+                        "returncode": returncode,
+                        "result": outcome,
+                    }
+                )
+                if not passed:
+                    invariant_passed = False
+                    overall = False
+                    break
+
+            details = {
+                "name": invariant["name"],
+                "description": invariant["description"],
+                "checks": checks,
+            }
+            self.genome.record_invariant_check(
+                invariant["id"],
+                passed=invariant_passed,
+                details=details,
+            )
+            results.append(
+                {
+                    "id": invariant["id"],
+                    "name": invariant["name"],
+                    "description": invariant["description"],
+                    "passed": invariant_passed,
+                    "checks": checks,
+                }
+            )
+
+        return {
+            "enabled": True,
+            "passed": overall,
+            "results": results,
+        }
+
     @staticmethod
     def _restore_promotion(
         source: Path,
@@ -841,6 +922,7 @@ class UniverseLab:
         candidate: dict[str, Any],
         applied: list[str],
         verification: dict[str, Any],
+        invariant_verification: dict[str, Any],
     ) -> dict[str, str]:
         import hashlib
 
@@ -854,6 +936,7 @@ class UniverseLab:
             "changes": candidate.get("changes") or [],
             "applied": applied,
             "verification": verification,
+            "invariant_dna": invariant_verification,
         }
         canonical = json.dumps(
             payload,
@@ -1027,11 +1110,40 @@ class UniverseLab:
                         ),
                     }
 
+            invariant_verification = {
+                "enabled": False,
+                "passed": None,
+                "results": [],
+            }
+            if verify and self.settings.invariants_enabled:
+                invariant_verification = await self._verify_invariant_dna()
+                if invariant_verification.get("passed") is False:
+                    self._restore_promotion(
+                        self.source,
+                        backup_root,
+                        created_paths,
+                    )
+                    return {
+                        "ok": False,
+                        "tournament_id": tournament_id,
+                        "candidate_id": candidate_id,
+                        "conflicts": [],
+                        "applied": [],
+                        "verification": verification,
+                        "invariant_verification": invariant_verification,
+                        "rolled_back": True,
+                        "message": (
+                            "Winner passed its own verification, but violated active "
+                            "Invariant DNA. Promotion was automatically rolled back."
+                        ),
+                    }
+
             proof = self._write_proof_bundle(
                 tournament_id,
                 candidate=candidate,
                 applied=applied,
                 verification=verification,
+                invariant_verification=invariant_verification,
             )
 
             promotion = {
@@ -1040,6 +1152,7 @@ class UniverseLab:
                 "applied": applied,
                 "backup_root": str(backup_root),
                 "verification": verification,
+                "invariant_verification": invariant_verification,
                 **proof,
             }
             metadata = self.get(tournament_id)
