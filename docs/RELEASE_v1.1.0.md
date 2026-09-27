@@ -85,9 +85,9 @@ lr-agent chrono "preserve the current core behavior" --generations 4 --trajector
 
 See:
 
-- [5-minute ChronoForge Demo](./DEMO_CHRONOFORGE.md)
-- [ChronoForge research note](./research/CHRONOFORGE.md)
-- [Experimental protocol](./research/EXPERIMENTS.md)
+- [5-minute ChronoForge Demo](https://github.com/LLR6/LR-agent/blob/main/docs/DEMO_CHRONOFORGE.md)
+- [ChronoForge research note](https://github.com/LLR6/LR-agent/blob/main/docs/research/CHRONOFORGE.md)
+- [Experimental protocol](https://github.com/LLR6/LR-agent/blob/main/docs/research/EXPERIMENTS.md)
 
 ## Research status
 
