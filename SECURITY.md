@@ -192,3 +192,27 @@ failures or repeated direct mutations of the same path without a successful reco
 verification command. It is a guardrail against mechanical loops, not a detector of every
 reasoning mistake. A task can still be wrong without triggering the Tripwire, and a legitimate
 iterative edit may trigger it conservatively.
+
+
+## ChronoForge boundaries
+
+ChronoForge is a prospective stress-testing system, not a literal time machine or a formal
+forecasting oracle.
+
+- Future scenarios are synthetic repository-evolution experiments. A high survival score does
+  not prove that the patch will survive every real future change.
+- Reality observations adjust category weights using a simple smoothed categorical model. This
+  is calibration evidence, not a claim that historical frequencies fully determine future events.
+- Future-maintainer Agents run only in copied shadow workspaces. They inherit shadow-mode
+  restrictions, including remote-write and package-publication protections.
+- Current-workspace seeds use project-inspector recommended checks when available. Forge seeds
+  preserve the candidate's recognized verification commands. If the checks are weak or
+  incomplete, temporal-survival evidence is correspondingly weak.
+- Invariant DNA is replayed in each future generation, but executable invariants are only as
+  strong as the commands registered by the user/project.
+- Maintenance Option Value is an engineering heuristic combining temporal survival and observed
+  maintenance burden. It is not financial option pricing, a probability of correctness, or a
+  formal maintainability proof.
+- ChronoForge can consume substantially more model and tool resources than a normal Agent run.
+  The upper-bound number of future-maintainer executions is approximately generations ×
+  trajectories, with earlier termination when a trajectory dies.
