@@ -131,6 +131,17 @@ For a guided example:
 
 **[→ 5-minute ChronoForge Demo](./docs/DEMO_CHRONOFORGE.md)**
 
+## Help wanted
+
+Good next contributions are already tracked as concrete issues:
+
+- [#1 Chrono Tournament](https://github.com/LLR6/LR-agent/issues/1)
+- [#2 Retrospective ChronoForge benchmark](https://github.com/LLR6/LR-agent/issues/2)
+- [#3 30–60 second real demo](https://github.com/LLR6/LR-agent/issues/3)
+- [#5 Counterexample / Patch Life Report thread](https://github.com/LLR6/LR-agent/issues/5)
+
+Counterexamples are especially valuable. If a mechanism gives a misleading result, please report the smallest reproducible case.
+
 ## Research program
 
 The research documentation is intentionally separated from marketing claims:
