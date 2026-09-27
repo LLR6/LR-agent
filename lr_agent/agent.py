@@ -1,0 +1,117 @@
+from __future__ import annotations
+
+import json
+from typing import Any
+
+from .config import Settings
+from .llm import OpenAICompatibleClient
+from .memory import MemoryStore
+from .models import AgentStep, ChatResponse
+from .prompts import build_system_prompt
+from .tools import ToolRegistry
+
+
+class Agent:
+    def __init__(
+        self,
+        settings: Settings,
+        llm: OpenAICompatibleClient,
+        memory: MemoryStore,
+        tools: ToolRegistry,
+    ):
+        self.settings = settings
+        self.llm = llm
+        self.memory = memory
+        self.tools = tools
+
+    async def run(
+        self,
+        message: str,
+        *,
+        session_id: str | None = None,
+        mode: str = "general",
+    ) -> ChatResponse:
+        if session_id is None or not self.memory.session_exists(session_id):
+            session_id = self.memory.create_session(message)
+
+        history = self.memory.recent_messages(session_id, limit=12)
+        self.memory.add_message(session_id, "user", message)
+
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": build_system_prompt(mode)},
+            *history,
+            {"role": "user", "content": message},
+        ]
+        steps: list[AgentStep] = []
+
+        for index in range(1, self.settings.max_steps + 1):
+            assistant = await self.llm.chat(messages, self.tools.specs())
+            content = assistant.get("content") or ""
+            tool_calls = assistant.get("tool_calls") or []
+
+            if not tool_calls:
+                answer = content.strip() or "任务已执行，但模型没有返回文本结果。"
+                self.memory.add_message(session_id, "assistant", answer)
+                return ChatResponse(
+                    session_id=session_id,
+                    answer=answer,
+                    steps=steps,
+                )
+
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": content if content else None,
+                    "tool_calls": tool_calls,
+                }
+            )
+
+            for tool_call in tool_calls:
+                function = tool_call.get("function") or {}
+                name = function.get("name") or ""
+                raw_arguments = function.get("arguments") or "{}"
+
+                try:
+                    arguments = json.loads(raw_arguments)
+                    if not isinstance(arguments, dict):
+                        raise ValueError("Tool arguments must decode to an object")
+                except (json.JSONDecodeError, ValueError) as exc:
+                    result = {"ok": False, "error": f"Invalid tool arguments: {exc}"}
+                    arguments = {"_raw": raw_arguments}
+                else:
+                    result = await self.tools.execute(name, arguments)
+
+                serialized = json.dumps(result, ensure_ascii=False)
+                preview = serialized[:800]
+                steps.append(
+                    AgentStep(
+                        index=len(steps) + 1,
+                        tool=name or "(missing tool name)",
+                        arguments=arguments,
+                        ok=bool(result.get("ok")),
+                        preview=preview,
+                    )
+                )
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_call.get("id", f"call_{index}_{len(steps)}"),
+                        "content": serialized[:50000],
+                    }
+                )
+
+        messages.append(
+            {
+                "role": "user",
+                "content": (
+                    "The execution step limit was reached. Stop using tools and summarize "
+                    "what was actually completed, what failed, and the next concrete step."
+                ),
+            }
+        )
+        final = await self.llm.chat(messages, tools=None)
+        answer = (final.get("content") or "").strip()
+        if not answer:
+            answer = "已达到最大执行步数，且模型未返回最终总结。"
+        self.memory.add_message(session_id, "assistant", answer)
+        return ChatResponse(session_id=session_id, answer=answer, steps=steps)
