@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import ipaddress
 import json
 import os
@@ -9,7 +10,7 @@ import socket
 import subprocess
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin, urlparse
+from urllib.parse import quote, urljoin, urlparse
 
 import httpx
 
@@ -123,6 +124,55 @@ class ToolRegistry:
                     "required": ["url"],
                 },
             ),
+            self._spec(
+                "github_get_repo",
+                "Read GitHub repository metadata through the GitHub REST API.",
+                {
+                    "type": "object",
+                    "properties": {"repo": {"type": "string", "description": "owner/name"}},
+                    "required": ["repo"],
+                },
+            ),
+            self._spec(
+                "github_list_contents",
+                "List files/directories in a GitHub repository path without cloning it.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "repo": {"type": "string", "description": "owner/name"},
+                        "path": {"type": "string", "default": ""},
+                        "ref": {"type": "string", "default": ""},
+                    },
+                    "required": ["repo"],
+                },
+            ),
+            self._spec(
+                "github_read_file",
+                "Read a UTF-8 text file from a GitHub repository without cloning it.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "repo": {"type": "string", "description": "owner/name"},
+                        "path": {"type": "string"},
+                        "ref": {"type": "string", "default": ""},
+                        "max_chars": {"type": "integer", "minimum": 1, "maximum": 200000, "default": 50000},
+                    },
+                    "required": ["repo", "path"],
+                },
+            ),
+            self._spec(
+                "github_create_issue",
+                "Create a GitHub issue. Disabled unless LR_AGENT_ALLOW_GITHUB_WRITE=true and a GitHub token is configured.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "repo": {"type": "string", "description": "owner/name"},
+                        "title": {"type": "string"},
+                        "body": {"type": "string", "default": ""},
+                    },
+                    "required": ["repo", "title"],
+                },
+            ),
         ]
 
     @staticmethod
@@ -158,6 +208,14 @@ class ToolRegistry:
                 value = await asyncio.to_thread(self._run_command, **arguments)
             elif name == "http_get":
                 value = await self._http_get(**arguments)
+            elif name == "github_get_repo":
+                value = await self._github_get_repo(**arguments)
+            elif name == "github_list_contents":
+                value = await self._github_list_contents(**arguments)
+            elif name == "github_read_file":
+                value = await self._github_read_file(**arguments)
+            elif name == "github_create_issue":
+                value = await self._github_create_issue(**arguments)
             else:
                 raise ToolError(f"Unknown tool: {name}")
             return {"ok": True, "result": value}
@@ -349,6 +407,146 @@ class ToolRegistry:
             "stdout": stdout,
             "stderr": stderr,
             "output_truncated": len(result.stdout) > 20000 or len(result.stderr) > 20000,
+        }
+
+    @staticmethod
+    def _validate_repo(repo: str) -> str:
+        parts = repo.split("/")
+        if len(parts) != 2 or not all(parts):
+            raise ToolError("repo must be in owner/name form")
+        allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.")
+        if any(any(ch not in allowed for ch in part) for part in parts):
+            raise ToolError("repo contains unsupported characters")
+        return repo
+
+    def _github_headers(self) -> dict[str, str]:
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "LR-Agent/0.2",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        if self.settings.github_token:
+            headers["Authorization"] = f"Bearer {self.settings.github_token}"
+        return headers
+
+    async def _github_request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json_body: dict[str, Any] | None = None,
+    ) -> Any:
+        base = self.settings.github_api_base.rstrip("/")
+        url = f"{base}{path}"
+        timeout = httpx.Timeout(30.0)
+        async with httpx.AsyncClient(timeout=timeout, headers=self._github_headers()) as client:
+            response = await client.request(method, url, json=json_body)
+
+        if response.status_code >= 400:
+            detail = response.text[:1500]
+            raise ToolError(f"GitHub API HTTP {response.status_code}: {detail}")
+        if response.status_code == 204:
+            return {}
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise ToolError("GitHub API returned non-JSON data") from exc
+
+    async def _github_get_repo(self, repo: str) -> dict[str, Any]:
+        repo = self._validate_repo(repo)
+        data = await self._github_request("GET", f"/repos/{repo}")
+        return {
+            "full_name": data.get("full_name"),
+            "private": data.get("private"),
+            "default_branch": data.get("default_branch"),
+            "description": data.get("description"),
+            "html_url": data.get("html_url"),
+            "language": data.get("language"),
+            "open_issues_count": data.get("open_issues_count"),
+        }
+
+    async def _github_list_contents(
+        self,
+        repo: str,
+        path: str = "",
+        ref: str = "",
+    ) -> dict[str, Any]:
+        repo = self._validate_repo(repo)
+        encoded_path = quote(path.strip("/"), safe="/")
+        suffix = f"/contents/{encoded_path}" if encoded_path else "/contents"
+        if ref:
+            suffix += "?ref=" + quote(ref, safe="")
+        data = await self._github_request("GET", f"/repos/{repo}{suffix}")
+        items = data if isinstance(data, list) else [data]
+        return {
+            "repo": repo,
+            "path": path,
+            "items": [
+                {
+                    "name": item.get("name"),
+                    "path": item.get("path"),
+                    "type": item.get("type"),
+                    "size": item.get("size"),
+                    "sha": item.get("sha"),
+                    "html_url": item.get("html_url"),
+                }
+                for item in items
+                if isinstance(item, dict)
+            ],
+        }
+
+    async def _github_read_file(
+        self,
+        repo: str,
+        path: str,
+        ref: str = "",
+        max_chars: int = 50000,
+    ) -> dict[str, Any]:
+        repo = self._validate_repo(repo)
+        encoded_path = quote(path.strip("/"), safe="/")
+        suffix = f"/contents/{encoded_path}"
+        if ref:
+            suffix += "?ref=" + quote(ref, safe="")
+        data = await self._github_request("GET", f"/repos/{repo}{suffix}")
+        if not isinstance(data, dict) or data.get("type") != "file":
+            raise ToolError("GitHub path is not a file")
+        if data.get("encoding") != "base64":
+            raise ToolError(f"Unsupported GitHub content encoding: {data.get('encoding')}")
+        raw = base64.b64decode((data.get("content") or "").encode("ascii"))
+        text = raw.decode("utf-8", errors="replace")
+        return {
+            "repo": repo,
+            "path": data.get("path"),
+            "sha": data.get("sha"),
+            "html_url": data.get("html_url"),
+            "content": text[:max_chars],
+            "truncated": len(text) > max_chars,
+            "chars": len(text),
+        }
+
+    async def _github_create_issue(
+        self,
+        repo: str,
+        title: str,
+        body: str = "",
+    ) -> dict[str, Any]:
+        repo = self._validate_repo(repo)
+        if not self.settings.allow_github_write:
+            raise ToolError(
+                "GitHub writes are disabled. Set LR_AGENT_ALLOW_GITHUB_WRITE=true to enable them."
+            )
+        if not self.settings.github_token:
+            raise ToolError("GitHub write requires LR_AGENT_GITHUB_TOKEN")
+        data = await self._github_request(
+            "POST",
+            f"/repos/{repo}/issues",
+            json_body={"title": title, "body": body},
+        )
+        return {
+            "number": data.get("number"),
+            "title": data.get("title"),
+            "html_url": data.get("html_url"),
+            "state": data.get("state"),
         }
 
     async def _validate_public_url(self, url: str) -> None:
