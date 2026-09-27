@@ -43,6 +43,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def sessions() -> list[dict[str, str]]:
         return memory.list_sessions()
 
+    @app.get("/api/sessions/{session_id}/messages")
+    async def session_messages(session_id: str) -> list[dict[str, str]]:
+        if not memory.session_exists(session_id):
+            raise HTTPException(status_code=404, detail="Session not found")
+        return memory.get_messages(session_id)
+
     @app.post("/api/chat", response_model=ChatResponse)
     async def chat(request: ChatRequest) -> ChatResponse:
         try:
