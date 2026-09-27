@@ -4,6 +4,22 @@
 
 > 当前版本：`1.1.0`。新增 **ChronoForge — Prospective Software Evolution Laboratory**：代码或 Forge 候选补丁在进入现实前，可以先被复制到多条连续的“未来仓库时间线”中，经历依赖升级、API 弃用、相邻功能、Schema 迁移、模块拆分、运行时变化、性能压力和配置契约变化。每一代未来都继承上一代真实代码，再由 Future Maintainer Agent 继续维护；系统随后重放原始验证与 Invariant DNA，输出 Temporal Survival Curve、维护成本、Maintenance Option Value 和预测半衰期。
 
+## Research / 研究文档
+
+LR-Agent 不只保留功能说明，也把研究假设、相关工作边界、可证伪实验和未来路线单独记录在仓库中：
+
+- **[Research Program](./docs/research/README.md)** — 总体研究问题与当前机制
+- **[State of the Art](./docs/research/STATE_OF_THE_ART.md)** — Self-Evolving Agents、BASM、SkillJack、SWE-EVO、SWE-Future、AgenticSZZ 等相关工作与差异
+- **[Causal Genome](./docs/research/CAUSAL_GENOME.md)** — quarantine、Treatment vs Control、Falsification、Anti-Gene、Genealogy、Invariant DNA
+- **[ChronoForge](./docs/research/CHRONOFORGE.md)** — Patch Aging、Future Trajectory、Temporal Survival、Maintenance Option Value、Reality Calibration
+- **[Novelty Claims](./docs/research/NOVELTY_CLAIMS.md)** — 哪些能说、哪些不能说，以及“未检索到同构公开系统”的边界
+- **[Experiments](./docs/research/EXPERIMENTS.md)** — Benchmark、Ablation、统计方法、时间切分与泄漏控制
+- **[Research Roadmap](./docs/research/ROADMAP.md)** — Chrono Tournament、Temporal Anti-Gene、Counterfactual Software Archaeology、Intent Recoverability 等
+- **[Bibliography](./docs/research/BIBLIOGRAPHY.md)** — 工作参考文献与检索记录
+- **[Implementation Map](./docs/research/IMPLEMENTATION_MAP.md)** — 每个研究概念对应到具体源码和测试
+
+研究文档采用保守表述：不会把“我们暂时没检索到”写成“全人类从未研究过”。涉及 novelty 的结论被明确标成 **search-based novelty hypothesis**，并保留可被后续文献推翻和修订的空间。
+
 ## 已实现
 
 - OpenAI-compatible 模型接口，可接云端兼容接口或本地 Ollama 等服务
