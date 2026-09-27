@@ -69,6 +69,10 @@ class Settings(BaseSettings):
     gene_activation_min_average_lift: float = 8.0
     invariants_enabled: bool = True
 
+    epistemic_tripwire: bool = True
+    tripwire_repeat_failures: int = 2
+    tripwire_repeat_mutations: int = 3
+
     approval_mode: str = "off"
     approval_timeout_s: float = 600.0
 
