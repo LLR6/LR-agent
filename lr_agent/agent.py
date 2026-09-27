@@ -54,9 +54,35 @@ class Agent:
         history = self.memory.recent_messages(session_id, limit=12)
         self.memory.add_message(session_id, "user", message)
 
+        retrieved_context: list[dict[str, Any]] = []
+        if self.settings.auto_context and mode in {"coder", "research"}:
+            try:
+                stats = self.tools.knowledge.stats()
+                if stats.get("files", 0) > 0:
+                    search = self.tools.knowledge.search(
+                        message,
+                        limit=max(1, min(self.settings.auto_context_results, 20)),
+                    )
+                    retrieved_context = list(search.get("results") or [])
+                    if retrieved_context:
+                        await emit(
+                            {
+                                "type": "context",
+                                "context": retrieved_context,
+                                "mode": search.get("mode"),
+                            }
+                        )
+            except Exception:
+                # Retrieval is assistive context; execution must continue if the index is stale.
+                retrieved_context = []
+
         plan: AgentPlan | None = None
         if self.settings.enable_planning and mode in {"coder", "research"}:
-            plan = await self.planner.create(message, mode)
+            plan = await self.planner.create(
+                message,
+                mode,
+                context=retrieved_context or None,
+            )
             await emit({"type": "plan", "plan": plan.model_dump()})
 
         run_id = self.memory.start_run(
@@ -77,9 +103,24 @@ class Agent:
 
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": build_system_prompt(mode)},
-            *history,
-            {"role": "user", "content": message},
         ]
+        if retrieved_context:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": (
+                        "Retrieved workspace context from the local knowledge index. "
+                        "It may be stale or incomplete, so verify relevant files before editing.\n"
+                        + json.dumps(retrieved_context, ensure_ascii=False)
+                    ),
+                }
+            )
+        messages.extend(
+            [
+                *history,
+                {"role": "user", "content": message},
+            ]
+        )
         if plan is not None:
             messages.append(
                 {
