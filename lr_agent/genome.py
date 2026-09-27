@@ -311,6 +311,37 @@ class CausalGenomeEngine:
             control = self._candidate(tournament, "control")
             treatment_score = float(treatment["evidence"]["score"])
             control_score = float(control["evidence"]["score"])
+
+            gene_verifier = {
+                "treatment": {
+                    "status": "unverified",
+                    "passed": None,
+                    "commands": [],
+                },
+                "control": {
+                    "status": "unverified",
+                    "passed": None,
+                    "commands": [],
+                },
+            }
+            if gene.get("verifier"):
+                gene_verifier["treatment"] = await self.universes.verify_candidate_commands(
+                    str(tournament["id"]),
+                    "treatment",
+                    list(gene["verifier"]),
+                )
+                gene_verifier["control"] = await self.universes.verify_candidate_commands(
+                    str(tournament["id"]),
+                    "control",
+                    list(gene["verifier"]),
+                )
+                # A proof-carrying gene is not allowed to receive a strong score from a
+                # candidate that fails the gene's own executable success criterion.
+                if gene_verifier["treatment"].get("passed") is False:
+                    treatment_score -= 40.0
+                if gene_verifier["control"].get("passed") is False:
+                    control_score -= 40.0
+
             evidence = self.store.record_evidence(
                 gene_id=gene_id,
                 task=task,
@@ -332,6 +363,7 @@ class CausalGenomeEngine:
                         "review": control.get("review"),
                         "changes": control.get("changes"),
                     },
+                    "proof_carrying_gene_verifier": gene_verifier,
                 },
                 positive_threshold=self.settings.gene_positive_lift_threshold,
                 negative_threshold=self.settings.gene_negative_lift_threshold,
@@ -346,6 +378,7 @@ class CausalGenomeEngine:
                     "tournament_id": tournament["id"],
                     "treatment_score": treatment_score,
                     "control_score": control_score,
+                    "gene_verifier": gene_verifier,
                     "effect": evidence["effect"],
                     "outcome": evidence["outcome"],
                     "evidence_id": evidence["id"],
