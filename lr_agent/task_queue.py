@@ -57,6 +57,10 @@ class TaskManager:
         self.memory = memory
         self.events = EventBroker()
         self._tasks: dict[str, asyncio.Task[None]] = {}
+        max_concurrent = int(
+            getattr(getattr(agent, "settings", None), "max_concurrent_tasks", 2)
+        )
+        self._semaphore = asyncio.Semaphore(max(1, max_concurrent))
         self._approval_futures: dict[str, asyncio.Future[bool]] = {}
         self._approval_tasks: dict[str, str] = {}
         self.approval_timeout_s = float(
@@ -79,6 +83,16 @@ class TaskManager:
         return task_id
 
     async def _execute(self, task_id: str, request: ChatRequest) -> None:
+        await self.events.publish(
+            task_id,
+            {
+                "type": "status",
+                "task_id": task_id,
+                "status": "queued",
+            },
+        )
+
+        await self._semaphore.acquire()
         self.memory.update_task_record(task_id, status="running")
         await self.events.publish(
             task_id,
@@ -165,6 +179,7 @@ class TaskManager:
             )
         finally:
             self._tasks.pop(task_id, None)
+            self._semaphore.release()
 
     async def request_approval(
         self,
