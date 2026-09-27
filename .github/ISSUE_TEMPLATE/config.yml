@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Research documentation
+    url: https://github.com/LLR6/LR-agent/tree/main/docs/research
+    about: Check research claims, related work, experiments and roadmap before proposing a new mechanism.
