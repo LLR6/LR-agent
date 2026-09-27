@@ -1,0 +1,40 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="LR_AGENT_",
+        extra="ignore",
+    )
+
+    base_url: str = "https://api.openai.com/v1"
+    api_key: str = ""
+    model: str = "gpt-5.6"
+
+    max_steps: int = 12
+    request_timeout_s: float = 120.0
+    command_timeout_s: float = 60.0
+
+    workspace: Path = Path("./workspace")
+    database: Path = Path("./data/lr_agent.db")
+
+    allowed_commands: str = "python,python3,pytest,git,gh,pip,uv,pwd,ls,dir,find,where"
+    allow_destructive: bool = False
+    allow_private_network: bool = False
+
+    def ensure_dirs(self) -> None:
+        self.workspace.mkdir(parents=True, exist_ok=True)
+        self.database.parent.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def allowed_command_set(self) -> set[str]:
+        return {
+            item.strip().lower()
+            for item in self.allowed_commands.split(",")
+            if item.strip()
+        }
