@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.3.0 - 2026-09-27
+
+### Added
+
+- Persistent background task queue metadata with queued/running/completed/failed/interrupted states.
+- WebSocket live events for plan creation, run start, tool execution, review and completion.
+- Background resume flow for persisted runs.
+- Workspace knowledge index backed by SQLite with FTS5/BM25 when available and LIKE fallback.
+- Knowledge management API and Web UI indexing control.
+- Unified diff evidence for file writes and exact replacements.
+- Read-only `git_status` and `git_diff` tools.
+- Cancellable asyncio subprocess execution for command tools.
+- Model endpoint retry and compatibility fallback tests carried forward from 0.2 hardening.
+
+### Changed
+
+- Web UI submits work through `/api/tasks` instead of blocking on the synchronous chat endpoint.
+- Tool evidence previews retain more output so diffs and verification logs are inspectable.
+- Package version, API version and documentation moved to 0.3.0.
+
+### Safety
+
+- Cancelling an Agent task now terminates the directly managed child process.
+- GitHub write operations remain opt-in.
+- Workspace path boundaries, command allowlists and private-network HTTP protections remain enabled.
+
 ## 0.2.0 - 2026-09-27
 
 ### Added
