@@ -153,3 +153,41 @@ def test_interrupted_chronoforge_run_is_not_marked_completed(tmp_path: Path) -> 
     assert loaded is not None
     assert loaded["status"] == "interrupted"
     assert "restarted" in loaded["error"].lower()
+
+
+def test_reality_weights_change_future_scenario_frequency() -> None:
+    scenarios = [
+        {
+            "category": "dependency_upgrade",
+            "name": "dependency",
+            "instruction": "x",
+            "weight": 0.8,
+        },
+        {
+            "category": "api_deprecation",
+            "name": "api",
+            "instruction": "x",
+            "weight": 0.1,
+        },
+        {
+            "category": "schema_migration",
+            "name": "schema",
+            "instruction": "x",
+            "weight": 0.1,
+        },
+    ]
+    schedule = ChronoForge._scenario_schedule(
+        scenarios,
+        generations=4,
+        trajectories=3,
+    )
+    categories = [
+        item["category"]
+        for trajectory in schedule
+        for item in trajectory
+    ]
+
+    assert categories.count("dependency_upgrade") > categories.count("api_deprecation")
+    assert categories.count("dependency_upgrade") > categories.count("schema_migration")
+    assert "api_deprecation" in categories
+    assert "schema_migration" in categories
