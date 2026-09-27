@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     allow_destructive: bool = False
     allow_private_network: bool = False
 
+    approval_mode: str = "off"
+    approval_timeout_s: float = 600.0
+
     github_token: str = ""
     github_api_base: str = "https://api.github.com"
     allow_github_write: bool = False
@@ -42,6 +45,14 @@ class Settings(BaseSettings):
         self.workspace.mkdir(parents=True, exist_ok=True)
         self.database.parent.mkdir(parents=True, exist_ok=True)
         self.knowledge_database.parent.mkdir(parents=True, exist_ok=True)
+
+    @property
+    @property
+    def normalized_approval_mode(self) -> str:
+        mode = self.approval_mode.strip().lower()
+        if mode not in {"off", "writes", "all"}:
+            return "off"
+        return mode
 
     @property
     def allowed_command_set(self) -> set[str]:
