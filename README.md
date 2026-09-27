@@ -2,7 +2,7 @@
 
 一个**真实可运行**的本地 AI Agent。它不是静态聊天页面：模型可以在受控工具权限下读取/修改工作区文件、执行白名单命令、访问公开 HTTP(S) 资源，并通过 SQLite 记住会话。
 
-> 当前版本：`0.4.0`。在 0.3 的后台任务与知识索引基础上，加入了 **交互式审批队列**：Agent 在执行本地写文件、远程 GitHub 写操作，或你配置的命令操作前，可以先展示 Diff/参数并等待你批准。
+> 当前版本：`0.5.0`。在 0.4 的审批体系基础上，继续补上了 **有界后台并发、自动项目上下文检索、Web/API 鉴权、远程绑定保护和更完整的 CLI 管理能力**。
 
 ## 已实现
 
@@ -12,8 +12,10 @@
 - Reviewer 发现未完成项时可自动返工，次数由 `LR_AGENT_MAX_REVIEW_RETRIES` 控制
 - 交互式审批：`off / writes / all` 三种模式；Web UI 会实时弹出待审批 Diff/命令/GitHub 写操作，CLI 也会询问 y/N
 - 后台任务队列：Web 请求不再一直阻塞等待 Agent；任务状态会持久化，服务重启后未完成任务会标记为 interrupted
+- 有界并发：默认最多同时运行 2 个后台任务，其余任务保持 queued；排队任务也可以取消
 - WebSocket 实时执行流：Planner、Run、Tool Step、Reviewer、完成状态会实时推送给 Web UI
-- 项目知识索引：可把 workspace 文本文件分块写入 SQLite，优先使用 FTS5/BM25 检索；Agent 可通过 knowledge 工具检索项目上下文
+- 项目知识索引：可把 workspace 文本文件分块写入 SQLite，优先使用 FTS5/BM25 检索；Coder / Research 默认会自动检索相关上下文再规划和执行
+- 检索安全：自动召回的项目内容会明确标记为 **UNTRUSTED PROJECT DATA**，不会被当作系统指令
 - 文件工具：列目录、全文搜索、读文件、写文件、精确替换；写入/替换会返回统一 Diff
 - Git 只读工具：git status / git diff
 - 命令工具：**不经过 shell**，只允许配置白名单中的可执行程序；使用 asyncio 子进程，任务取消/超时时会终止当前子进程
@@ -23,7 +25,9 @@
 - GitHub 原生工具：仓库元数据、目录、文件、Actions；显式开启后可建 Issue、分支、写文件、开 PR
 - General / Coder / Research 三种工作模式
 - FastAPI 后端 + 本地 Web 控制台
-- CLI：`serve` / `chat` / `runs` / `resume` / `doctor`
+- CLI：`serve` / `chat` / `tasks` / `runs` / `resume` / `index` / `search` / `doctor`
+- Web/API 可选 Bearer Token 鉴权；WebSocket 同样受保护
+- 非本机监听默认要求 Web Token；Docker Compose 默认只把 8765 发布到宿主机 loopback
 - Docker / docker compose
 - pytest 单元测试 + GitHub Actions CI
 - 对 API Key、危险 Git 命令、目录穿越做基础防护
@@ -107,10 +111,18 @@ lr-agent chat --mode general
 
 输入 `/exit` 退出。
 
-查看最近持久化任务：
+查看后台 Task 与 Run：
 
 ```bash
+lr-agent tasks
 lr-agent runs
+```
+
+建立并搜索项目知识索引：
+
+```bash
+lr-agent index
+lr-agent search "authentication flow"
 ```
 
 恢复某一轮任务：
@@ -267,7 +279,11 @@ knowledge_stats
 LR_AGENT_KNOWLEDGE_DATABASE=./data/knowledge.db
 LR_AGENT_KNOWLEDGE_MAX_FILES=3000
 LR_AGENT_KNOWLEDGE_MAX_FILE_BYTES=1000000
+LR_AGENT_AUTO_CONTEXT=true
+LR_AGENT_AUTO_CONTEXT_RESULTS=6
 ```
+
+建立索引后，Coder / Research 模式会在每轮任务开始时自动搜索相关上下文，并把召回的文件片段显示在 Web UI 的 **CONTEXT** 区域。召回内容会被当作不可信项目数据，Agent 仍需在改动前重新读取关键文件。
 
 当前是本地 SQLite FTS5/BM25 检索，不依赖外部向量数据库；后续可以再加 embeddings 做混合检索。
 
@@ -280,7 +296,13 @@ POST /api/tasks
 WS   /ws/tasks/{task_id}
 ```
 
-提交和监听任务。任务元数据会持久化到 SQLite。
+提交和监听任务。任务元数据会持久化到 SQLite。默认最多同时执行 2 个任务：
+
+```env
+LR_AGENT_MAX_CONCURRENT_TASKS=2
+```
+
+超过并发上限的任务保持 `queued`，不会提前占用执行槽。
 
 常用接口：
 
@@ -352,7 +374,52 @@ CLI 在审批模式开启时，也会在真正执行前显示预览并询问：
 Approve this action? [y/N]:
 ```
 
-## 13. Docker
+
+## 13. Web / API 鉴权与远程部署
+
+本机默认访问 `127.0.0.1:8765` 时，可以保持：
+
+```env
+LR_AGENT_WEB_TOKEN=
+```
+
+如果要监听局域网或其他非 loopback 地址，建议设置强随机 Token：
+
+```env
+LR_AGENT_WEB_TOKEN=你的长随机字符串
+```
+
+REST API 使用：
+
+```text
+Authorization: Bearer <token>
+```
+
+Web UI 遇到 401 会提示输入 Token，并只保存在当前浏览器会话的 `sessionStorage`。任务 WebSocket 也会携带同一个 Token。
+
+为了避免误把本地 Agent 暴露到网络，下面这种启动方式在没有 Token 时会直接拒绝：
+
+```bash
+lr-agent serve --host 0.0.0.0
+```
+
+只有明确设置：
+
+```env
+LR_AGENT_ALLOW_REMOTE_WITHOUT_TOKEN=true
+```
+
+才允许无 Token 的非本机绑定。这个开关不建议用于公开网络。
+
+Docker Compose 内部需要监听 `0.0.0.0`，但默认只映射：
+
+```text
+127.0.0.1:8765:8765
+```
+
+因此宿主机默认仍是本机访问。
+
+## 14. Docker
 
 先创建 `.env`，然后：
 
@@ -375,7 +442,7 @@ Docker 会把：
 
 持久化到宿主机。
 
-## 14. 测试
+## 15. 测试
 
 ```bash
 pytest
@@ -395,6 +462,9 @@ pytest
 - 文件统一 Diff 与 git status / diff
 - 子进程任务取消
 - write / command / GitHub 写操作审批生命周期与拒绝保护
+- 后台并发上限、queued 任务取消
+- 自动项目上下文检索及“不可信上下文”标记
+- REST Bearer Token 与 WebSocket Token 鉴权
 
 GitHub Actions 会在 Python 3.11 和 3.12 上运行同一套测试。
 
@@ -406,6 +476,7 @@ GitHub Actions 会在 Python 3.11 和 3.12 上运行同一套测试。
 | `LR_AGENT_API_KEY` | 空 | 模型 API Key |
 | `LR_AGENT_MODEL` | `gpt-5.6` | 模型名 |
 | `LR_AGENT_MAX_STEPS` | `12` | 单轮最大工具循环 |
+| `LR_AGENT_MAX_CONCURRENT_TASKS` | `2` | 最大并发后台任务数 |
 | `LR_AGENT_ENABLE_PLANNING` | `true` | Coder/Research 是否先规划 |
 | `LR_AGENT_ENABLE_REVIEW` | `true` | 是否执行结果审查 |
 | `LR_AGENT_MAX_REVIEW_RETRIES` | `1` | Reviewer 不通过后的最大返工次数 |
@@ -414,11 +485,15 @@ GitHub Actions 会在 Python 3.11 和 3.12 上运行同一套测试。
 | `LR_AGENT_KNOWLEDGE_DATABASE` | `./data/knowledge.db` | 项目知识索引数据库 |
 | `LR_AGENT_KNOWLEDGE_MAX_FILES` | `3000` | 单次索引最大文件数 |
 | `LR_AGENT_KNOWLEDGE_MAX_FILE_BYTES` | `1000000` | 单文件索引大小上限 |
+| `LR_AGENT_AUTO_CONTEXT` | `true` | Coder/Research 是否自动检索项目上下文 |
+| `LR_AGENT_AUTO_CONTEXT_RESULTS` | `6` | 自动召回最大结果数 |
 | `LR_AGENT_ALLOWED_COMMANDS` | 见上文 | 命令白名单 |
 | `LR_AGENT_ALLOW_DESTRUCTIVE` | `false` | 是否允许已标记危险命令 |
 | `LR_AGENT_ALLOW_PRIVATE_NETWORK` | `false` | HTTP 工具是否允许访问私网 |
 | `LR_AGENT_APPROVAL_MODE` | `off` | `off / writes / all` 交互式审批范围 |
 | `LR_AGENT_APPROVAL_TIMEOUT_S` | `600` | 单次审批等待秒数 |
+| `LR_AGENT_WEB_TOKEN` | 空 | Web/API/WS 鉴权 Token |
+| `LR_AGENT_ALLOW_REMOTE_WITHOUT_TOKEN` | `false` | 是否允许无 Token 的非 loopback 监听 |
 | `LR_AGENT_GITHUB_TOKEN` | 空 | GitHub API Token；私有仓库/写操作需要 |
 | `LR_AGENT_GITHUB_API_BASE` | `https://api.github.com` | GitHub API 地址 |
 | `LR_AGENT_ALLOW_GITHUB_WRITE` | `false` | 是否允许 GitHub 写操作 |
@@ -429,10 +504,10 @@ GitHub Actions 会在 Python 3.11 和 3.12 上运行同一套测试。
 
 1. embeddings + FTS5 的混合 RAG
 2. 多工作区与项目配置文件
-3. 浏览器自动化
-4. Windows 桌面客户端与托盘常驻
-5. 考研 / 网安专用 Agent profile
-6. 可配置的审批策略（按命令、路径、仓库细分）
+3. 可配置的审批策略（按命令、路径、仓库细分）
+4. 浏览器自动化
+5. Windows 桌面客户端与托盘常驻
+6. 考研 / 网安专用 Agent profile
 
 ---
 
