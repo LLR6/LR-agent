@@ -36,6 +36,9 @@ class Agent:
         session_id: str | None = None,
         mode: str = "general",
         event_sink: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+        approval_handler: Callable[
+            [str, dict[str, Any], str], Awaitable[bool]
+        ] | None = None,
     ) -> ChatResponse:
         async def emit(event: dict[str, Any]) -> None:
             if event_sink is None:
@@ -188,7 +191,11 @@ class Agent:
                     result = {"ok": False, "error": f"Invalid tool arguments: {exc}"}
                     arguments = {"_raw": raw_arguments}
                 else:
-                    result = await self.tools.execute(name, arguments)
+                    result = await self.tools.execute(
+                        name,
+                        arguments,
+                        approval_handler=approval_handler,
+                    )
 
                 serialized = json.dumps(result, ensure_ascii=False)
                 preview = serialized[:4000]
