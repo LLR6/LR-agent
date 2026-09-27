@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     approval_mode: str = "off"
     approval_timeout_s: float = 600.0
 
+    web_token: str = ""
+    allow_remote_without_token: bool = False
+
     github_token: str = ""
     github_api_base: str = "https://api.github.com"
     allow_github_write: bool = False
