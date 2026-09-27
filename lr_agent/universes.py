@@ -283,6 +283,28 @@ class UniverseLab:
             return None
 
     @classmethod
+    def verification_commands(cls, response: ChatResponse) -> list[dict[str, Any]]:
+        commands: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for step in response.steps:
+            if not cls._is_verification_command(step):
+                continue
+            argv = step.arguments.get("argv")
+            if not isinstance(argv, list) or not argv:
+                continue
+            item = {
+                "argv": [str(value) for value in argv],
+                "cwd": str(step.arguments.get("cwd", ".")),
+                "timeout_s": step.arguments.get("timeout_s"),
+            }
+            key = json.dumps(item, ensure_ascii=False, sort_keys=True)
+            if key in seen:
+                continue
+            seen.add(key)
+            commands.append(item)
+        return commands
+
+    @classmethod
     def score_candidate(
         cls,
         response: ChatResponse,
@@ -479,6 +501,7 @@ class UniverseLab:
                 "answer": response.answer,
                 "review": response.review.model_dump() if response.review else None,
                 "evidence": evidence,
+                "verification_commands": self.verification_commands(response),
                 "changes": changes,
                 "scan": scan,
                 "error": None,
@@ -502,6 +525,7 @@ class UniverseLab:
                     "tool_failures": 1,
                     "changed_files": 0,
                 },
+                "verification_commands": [],
                 "changes": [],
                 "scan": {},
                 "error": f"{type(exc).__name__}: {exc}",
@@ -661,11 +685,126 @@ class UniverseLab:
             "mode": stat.S_IMODE(path.stat().st_mode),
         }
 
+    async def _verify_real_workspace(
+        self,
+        commands: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        if not commands:
+            return {
+                "status": "unverified",
+                "passed": None,
+                "commands": [],
+            }
+
+        verify_settings = self.settings.model_copy(
+            deep=True,
+            update={
+                "approval_mode": "off",
+                "shadow_mode": False,
+                "allow_github_write": False,
+            },
+        )
+        tools = ToolRegistry(verify_settings)
+        results: list[dict[str, Any]] = []
+        passed = True
+
+        for command in commands:
+            arguments = {
+                "argv": list(command["argv"]),
+                "cwd": str(command.get("cwd") or "."),
+            }
+            if command.get("timeout_s") is not None:
+                arguments["timeout_s"] = command["timeout_s"]
+            outcome = await tools.execute("run_command", arguments)
+            returncode = None
+            if outcome.get("ok"):
+                payload = outcome.get("result") or {}
+                returncode = payload.get("returncode")
+            command_passed = bool(outcome.get("ok")) and returncode == 0
+            results.append(
+                {
+                    "arguments": arguments,
+                    "passed": command_passed,
+                    "returncode": returncode,
+                    "result": outcome,
+                }
+            )
+            if not command_passed:
+                passed = False
+                break
+
+        return {
+            "status": "passed" if passed else "failed",
+            "passed": passed,
+            "commands": results,
+        }
+
+    @staticmethod
+    def _restore_promotion(
+        source: Path,
+        backup_root: Path,
+        created_paths: list[Path],
+    ) -> None:
+        for path in reversed(created_paths):
+            try:
+                if path.exists() or path.is_symlink():
+                    path.unlink()
+            except OSError:
+                pass
+        for backup in sorted(backup_root.rglob("*")):
+            if not backup.is_file():
+                continue
+            rel = backup.relative_to(backup_root)
+            destination = source / rel
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(backup, destination)
+
+    def _write_proof_bundle(
+        self,
+        tournament_id: str,
+        *,
+        candidate: dict[str, Any],
+        applied: list[str],
+        verification: dict[str, Any],
+    ) -> dict[str, str]:
+        import hashlib
+
+        payload = {
+            "format": "lr-agent-proof-carrying-patch/v1",
+            "generated_at": _now(),
+            "tournament_id": tournament_id,
+            "candidate_id": candidate["id"],
+            "strategy": candidate["strategy"],
+            "evidence_score": candidate["evidence"],
+            "changes": candidate.get("changes") or [],
+            "applied": applied,
+            "verification": verification,
+        }
+        canonical = json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        proof_sha256 = hashlib.sha256(canonical).hexdigest()
+        payload["proof_sha256"] = proof_sha256
+        proof_path = (
+            self._tournament_dir(tournament_id)
+            / "proofs"
+            / f"{candidate['id']}-{uuid.uuid4().hex[:8]}.json"
+        )
+        _safe_json_dump(proof_path, payload)
+        return {
+            "proof_path": str(proof_path),
+            "proof_sha256": proof_sha256,
+        }
+
     async def promote(
         self,
         tournament_id: str,
         *,
         candidate_id: str | None = None,
+        verify: bool = True,
     ) -> dict[str, Any]:
         async with self._promotion_lock:
             metadata = self.get(tournament_id)
@@ -777,26 +916,56 @@ class UniverseLab:
                             os.chmod(source_path, int(target["mode"]))
                     applied.append(rel)
             except Exception:
-                for path in reversed(created_paths):
-                    try:
-                        if path.exists() or path.is_symlink():
-                            path.unlink()
-                    except OSError:
-                        pass
-                for backup in sorted(backup_root.rglob("*")):
-                    if not backup.is_file():
-                        continue
-                    rel = backup.relative_to(backup_root)
-                    destination = self.source / rel
-                    destination.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(backup, destination)
+                self._restore_promotion(
+                    self.source,
+                    backup_root,
+                    created_paths,
+                )
                 raise
+
+            verification = {
+                "status": "skipped",
+                "passed": None,
+                "commands": [],
+            }
+            if verify:
+                verification = await self._verify_real_workspace(
+                    list(candidate.get("verification_commands") or [])
+                )
+                if verification.get("passed") is False:
+                    self._restore_promotion(
+                        self.source,
+                        backup_root,
+                        created_paths,
+                    )
+                    return {
+                        "ok": False,
+                        "tournament_id": tournament_id,
+                        "candidate_id": candidate_id,
+                        "conflicts": [],
+                        "applied": [],
+                        "verification": verification,
+                        "rolled_back": True,
+                        "message": (
+                            "Winner changes were applied temporarily, but real-workspace "
+                            "verification failed. Promotion was automatically rolled back."
+                        ),
+                    }
+
+            proof = self._write_proof_bundle(
+                tournament_id,
+                candidate=candidate,
+                applied=applied,
+                verification=verification,
+            )
 
             promotion = {
                 "candidate_id": candidate_id,
                 "promoted_at": _now(),
                 "applied": applied,
                 "backup_root": str(backup_root),
+                "verification": verification,
+                **proof,
             }
             metadata = self.get(tournament_id)
             metadata.setdefault("promotions", []).append(promotion)
@@ -809,4 +978,6 @@ class UniverseLab:
                 "conflicts": [],
                 "applied": applied,
                 "backup_root": str(backup_root),
+                "verification": verification,
+                **proof,
             }
