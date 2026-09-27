@@ -33,7 +33,11 @@ class Settings(BaseSettings):
     auto_context: bool = True
     auto_context_results: int = 6
 
-    allowed_commands: str = "python,python3,pytest,git,gh,pip,uv,pwd,ls,dir,find,where"
+    allowed_commands: str = (
+        "python,python3,pytest,git,gh,pip,uv,pwd,ls,dir,find,where,"
+        "node,npm,npx,pnpm,yarn,java,javac,mvn,gradle,gradlew,gradlew.bat,"
+        "cargo,go,cmake,ctest"
+    )
     allow_destructive: bool = False
     allow_private_network: bool = False
 
