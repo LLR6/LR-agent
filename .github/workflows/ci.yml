@@ -19,5 +19,24 @@ jobs:
           cache: pip
       - name: Install
         run: pip install -e ".[dev]"
+      - name: Compile Python
+        run: python -m compileall -q lr_agent
       - name: Test
         run: pytest
+      - name: Check Web UI JavaScript syntax
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          html = Path("lr_agent/web/index.html").read_text(encoding="utf-8")
+          scripts = re.findall(r"<script>(.*?)</script>", html, flags=re.DOTALL)
+          if not scripts:
+              raise SystemExit("No inline script found in Web UI")
+          Path("/tmp/lr-agent-ui.js").write_text(
+              "\n".join(scripts),
+              encoding="utf-8",
+          )
+          PY
+          node --check /tmp/lr-agent-ui.js
