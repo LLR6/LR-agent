@@ -2,7 +2,7 @@
 
 一个**真实可运行**的本地 AI Agent。它不是静态聊天页面：模型可以在受控工具权限下读取/修改工作区文件、执行白名单命令、访问公开 HTTP(S) 资源，并通过 SQLite 记住会话。
 
-> 当前版本：`0.2.0`。已经从“能调用工具”升级到 **Planner → Executor → Reviewer + 持久化 Run + GitHub 原生工具 + 中断恢复**。
+> 当前版本：`0.3.0`。在 0.2 的 Planner / Executor / Reviewer 基础上，加入了 **后台任务队列、WebSocket 实时执行流、持久化任务状态、项目知识索引、文件 Diff 证据和可取消子进程**。
 
 ## 已实现
 
@@ -10,8 +10,12 @@
 - Planner / Executor / Reviewer：Coder、Research 模式会先生成可验证计划，执行后再由 Reviewer 检查是否真的完成
 - Tool Calling 自主循环：模型 -> 工具 -> 工具结果 -> 模型，最多执行 `LR_AGENT_MAX_STEPS` 步
 - Reviewer 发现未完成项时可自动返工，次数由 `LR_AGENT_MAX_REVIEW_RETRIES` 控制
-- 文件工具：列目录、全文搜索、读文件、写文件、精确替换
-- 命令工具：**不经过 shell**，只允许配置白名单中的可执行程序
+- 后台任务队列：Web 请求不再一直阻塞等待 Agent；任务状态会持久化，服务重启后未完成任务会标记为 interrupted
+- WebSocket 实时执行流：Planner、Run、Tool Step、Reviewer、完成状态会实时推送给 Web UI
+- 项目知识索引：可把 workspace 文本文件分块写入 SQLite，优先使用 FTS5/BM25 检索；Agent 可通过 knowledge 工具检索项目上下文
+- 文件工具：列目录、全文搜索、读文件、写文件、精确替换；写入/替换会返回统一 Diff
+- Git 只读工具：git status / git diff
+- 命令工具：**不经过 shell**，只允许配置白名单中的可执行程序；使用 asyncio 子进程，任务取消/超时时会终止当前子进程
 - HTTP 工具：GET 公网资源；默认拦截 localhost / 私网 / link-local / reserved 地址
 - SQLite 会话记忆 + 每次 Run 的计划、工具调用证据、最终状态和 Review 持久化
 - 中断恢复：Web UI 可点“继续此任务”，CLI 可用 `lr-agent resume RUN_ID`
@@ -149,8 +153,13 @@ ToolRegistry
   ├─ read_file
   ├─ write_file
   ├─ replace_in_file
+  ├─ git_status
+  ├─ git_diff
   ├─ run_command
   ├─ http_get
+  ├─ knowledge_index
+  ├─ knowledge_search
+  ├─ knowledge_stats
   ├─ github_get_repo
   ├─ github_list_contents
   ├─ github_read_file
@@ -167,7 +176,7 @@ LLM 再判断
 继续调用工具 / 返回最终答案
 ```
 
-Web UI 右侧会显示 **Run ID、Plan、真实工具调用、参数、成功/失败、Reviewer 结论**。带 `*` 的 GitHub 写操作默认关闭。
+Web UI 右侧会显示 **Task / Run ID、Plan、实时工具调用、参数、Diff/输出证据、Reviewer 结论**。任务通过 WebSocket 实时刷新。带 `*` 的 GitHub 写操作默认关闭。
 
 ## 7. 工作区
 
@@ -234,7 +243,58 @@ LR_AGENT_ALLOW_GITHUB_WRITE=true
 
 Token 不会作为普通工具参数传给模型。
 
-## 10. Docker
+
+## 10. 项目知识索引
+
+Web UI 左侧可以直接点击 **“索引工作区知识库”**。也可以让 Agent 调用：
+
+```text
+knowledge_index
+knowledge_search
+knowledge_stats
+```
+
+索引默认会跳过 `.git`、`node_modules`、虚拟环境、构建目录和二进制文件，并按文本块写入：
+
+```text
+./data/knowledge.db
+```
+
+主要配置：
+
+```env
+LR_AGENT_KNOWLEDGE_DATABASE=./data/knowledge.db
+LR_AGENT_KNOWLEDGE_MAX_FILES=3000
+LR_AGENT_KNOWLEDGE_MAX_FILE_BYTES=1000000
+```
+
+当前是本地 SQLite FTS5/BM25 检索，不依赖外部向量数据库；后续可以再加 embeddings 做混合检索。
+
+## 11. 后台任务与实时日志
+
+Web UI 默认通过：
+
+```text
+POST /api/tasks
+WS   /ws/tasks/{task_id}
+```
+
+提交和监听任务。任务元数据会持久化到 SQLite。
+
+常用接口：
+
+```text
+GET  /api/tasks
+GET  /api/tasks/{task_id}
+POST /api/tasks/{task_id}/cancel
+GET  /api/runs
+GET  /api/runs/{run_id}
+POST /api/runs/{run_id}/resume-task
+```
+
+恢复旧 Run 时也会重新进入后台队列，并重新检查当前 workspace 状态，而不是盲目沿用旧结果。
+
+## 12. Docker
 
 先创建 `.env`，然后：
 
@@ -257,7 +317,7 @@ Docker 会把：
 
 持久化到宿主机。
 
-## 11. 测试
+## 13. 测试
 
 ```bash
 pytest
@@ -265,12 +325,17 @@ pytest
 
 当前测试覆盖：
 
-- SQLite 会话读写与 Run/Step 持久化
+- SQLite 会话、Run/Step、后台 Task 状态持久化
 - 文件创建/读取/替换
 - workspace 目录穿越拦截
 - 非白名单命令拦截
 - Planner -> Executor -> Tool -> Reviewer 完整闭环
 - GitHub 写操作默认关闭
+- 后台 Task 完成与服务重启后的 interrupted 恢复语义
+- WebSocket 事件源对应的任务事件历史
+- 项目知识索引、FTS/LIKE 搜索与依赖目录排除
+- 文件统一 Diff 与 git status / diff
+- 子进程任务取消
 
 GitHub Actions 会在 Python 3.11 和 3.12 上运行同一套测试。
 
@@ -286,7 +351,10 @@ GitHub Actions 会在 Python 3.11 和 3.12 上运行同一套测试。
 | `LR_AGENT_ENABLE_REVIEW` | `true` | 是否执行结果审查 |
 | `LR_AGENT_MAX_REVIEW_RETRIES` | `1` | Reviewer 不通过后的最大返工次数 |
 | `LR_AGENT_WORKSPACE` | `./workspace` | Agent 工作目录 |
-| `LR_AGENT_DATABASE` | `./data/lr_agent.db` | SQLite 数据库 |
+| `LR_AGENT_DATABASE` | `./data/lr_agent.db` | 会话、Run、Task SQLite 数据库 |
+| `LR_AGENT_KNOWLEDGE_DATABASE` | `./data/knowledge.db` | 项目知识索引数据库 |
+| `LR_AGENT_KNOWLEDGE_MAX_FILES` | `3000` | 单次索引最大文件数 |
+| `LR_AGENT_KNOWLEDGE_MAX_FILE_BYTES` | `1000000` | 单文件索引大小上限 |
 | `LR_AGENT_ALLOWED_COMMANDS` | 见上文 | 命令白名单 |
 | `LR_AGENT_ALLOW_DESTRUCTIVE` | `false` | 是否允许已标记危险命令 |
 | `LR_AGENT_ALLOW_PRIVATE_NETWORK` | `false` | HTTP 工具是否允许访问私网 |
@@ -298,9 +366,9 @@ GitHub Actions 会在 Python 3.11 和 3.12 上运行同一套测试。
 
 后续可以继续做：
 
-1. 真正的后台任务队列与 WebSocket 实时日志
-2. 文件向量检索与长期知识库（RAG）
-3. Diff 审批、命令审批和更细粒度权限
+1. Diff / 命令 / GitHub 写操作的交互式审批队列
+2. embeddings + FTS5 的混合 RAG
+3. 多工作区与项目配置文件
 4. 浏览器自动化
 5. Windows 桌面客户端与托盘常驻
 6. 考研 / 网安专用 Agent profile
