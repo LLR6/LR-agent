@@ -63,6 +63,20 @@ class FakeUniverseLab:
     def get(self, tournament_id):
         return self.saved[tournament_id]
 
+    async def verify_candidate_commands(self, tournament_id, candidate_id, commands):
+        return {
+            "status": "passed",
+            "passed": True,
+            "commands": [
+                {
+                    "command": command,
+                    "passed": True,
+                    "returncode": 0,
+                }
+                for command in commands
+            ],
+        }
+
 
 def settings_for(tmp_path: Path) -> Settings:
     return Settings(
