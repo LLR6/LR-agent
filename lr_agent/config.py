@@ -48,6 +48,16 @@ class Settings(BaseSettings):
     )
     allow_destructive: bool = False
     allow_private_network: bool = False
+    shadow_mode: bool = False
+
+    universe_root: Path = Path("./data/universes")
+    universe_candidates: int = 3
+    universe_max_files: int = 5000
+    universe_max_file_bytes: int = 5_000_000
+    universe_excludes: str = (
+        ".git,.venv,venv,node_modules,__pycache__,.pytest_cache,"
+        ".mypy_cache,.ruff_cache,dist,build,data"
+    )
 
     approval_mode: str = "off"
     approval_timeout_s: float = 600.0
@@ -63,6 +73,15 @@ class Settings(BaseSettings):
         self.workspace.mkdir(parents=True, exist_ok=True)
         self.database.parent.mkdir(parents=True, exist_ok=True)
         self.knowledge_database.parent.mkdir(parents=True, exist_ok=True)
+        self.universe_root.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def universe_exclude_set(self) -> set[str]:
+        return {
+            item.strip()
+            for item in self.universe_excludes.split(",")
+            if item.strip()
+        }
 
     @property
     def normalized_approval_mode(self) -> str:
