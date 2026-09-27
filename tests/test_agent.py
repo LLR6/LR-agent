@@ -92,10 +92,11 @@ class ContextAwareLLM:
             item.get("content", "")
             for item in messages
             if item.get("role") == "system"
-            and "Retrieved workspace context" in (item.get("content") or "")
+            and "retrieved workspace context" in (item.get("content") or "").lower()
         ]
         assert context_messages
         assert "important_project_marker" in context_messages[0]
+        assert "UNTRUSTED PROJECT DATA" in context_messages[0]
         return {"content": "used indexed context"}
 
 
