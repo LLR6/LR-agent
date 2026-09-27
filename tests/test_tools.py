@@ -243,3 +243,21 @@ async def test_project_inspect_detects_python_and_node(registry: ToolRegistry) -
     assert ["pytest"] in commands
     assert ["npm", "run", "test"] in commands
     assert ["npm", "run", "build"] in commands
+
+
+@pytest.mark.asyncio
+async def test_relative_workspace_executable_resolves_from_cwd(registry: ToolRegistry) -> None:
+    tool = registry.root / "localtool"
+    tool.write_text(
+        "#!/usr/bin/env python3\nprint('relative-ok')\n",
+        encoding="utf-8",
+    )
+    tool.chmod(0o755)
+    registry.settings.allowed_commands = "localtool"
+
+    result = await registry.execute(
+        "run_command",
+        {"argv": ["./localtool"], "cwd": "."},
+    )
+    assert result["ok"] is True
+    assert "relative-ok" in result["result"]["stdout"]
