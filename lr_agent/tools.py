@@ -706,6 +706,10 @@ class ToolRegistry:
         if not argv or not all(isinstance(item, str) and item for item in argv):
             raise ToolError("argv must be a non-empty list of strings")
 
+        run_cwd = self._safe_path(cwd)
+        if not run_cwd.is_dir():
+            raise ToolError(f"cwd is not a directory: {cwd}")
+
         executable = Path(argv[0]).name.lower()
         if executable.endswith(".exe"):
             executable = executable[:-4]
@@ -714,8 +718,19 @@ class ToolRegistry:
             raise ToolError(
                 f"Executable '{executable}' is not allowlisted. Allowed: {sorted(allowed)}"
             )
-        if shutil.which(argv[0]) is None and not Path(argv[0]).exists():
-            raise ToolError(f"Executable not found: {argv[0]}")
+
+        resolved = shutil.which(argv[0])
+        if resolved is None:
+            program = Path(argv[0])
+            if program.is_absolute():
+                candidate = program.resolve()
+            else:
+                candidate = (run_cwd / program).resolve()
+                if candidate != self.root and self.root not in candidate.parents:
+                    raise ToolError(f"Executable escapes workspace: {argv[0]}")
+            if not candidate.exists() or not candidate.is_file():
+                raise ToolError(f"Executable not found: {argv[0]}")
+            argv = [str(candidate), *argv[1:]]
 
         joined = " ".join(argv).lower()
         destructive = (
@@ -729,10 +744,6 @@ class ToolRegistry:
         )
         if not self.settings.allow_destructive and any(x in joined for x in destructive):
             raise ToolError("Potentially destructive command blocked by policy.")
-
-        run_cwd = self._safe_path(cwd)
-        if not run_cwd.is_dir():
-            raise ToolError(f"cwd is not a directory: {cwd}")
 
         safe_env_keys = {
             "PATH",
