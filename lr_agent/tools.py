@@ -104,6 +104,16 @@ class ToolRegistry:
                 },
             ),
             self._spec(
+                "project_inspect",
+                "Inspect a workspace project and identify its technology stack, manifests and likely verification commands without executing them.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "default": "."},
+                    },
+                },
+            ),
+            self._spec(
                 "git_status",
                 "Show concise git status for a repository inside the workspace.",
                 {
@@ -390,6 +400,8 @@ class ToolRegistry:
                 value = self._write_file(**arguments)
             elif name == "replace_in_file":
                 value = self._replace_in_file(**arguments)
+            elif name == "project_inspect":
+                value = self._project_inspect(**arguments)
             elif name == "git_status":
                 value = await self._git_status(**arguments)
             elif name == "git_diff":
@@ -506,6 +518,107 @@ class ToolRegistry:
             "content": text[:max_chars],
             "truncated": len(text) > max_chars,
             "chars": len(text),
+        }
+
+    def _project_inspect(self, path: str = ".") -> dict[str, Any]:
+        target = self._safe_path(path)
+        if not target.is_dir():
+            raise ToolError(f"Project path is not a directory: {path}")
+
+        stacks: list[str] = []
+        manifests: list[str] = []
+        checks: list[dict[str, Any]] = []
+
+        def has(name: str) -> bool:
+            return (target / name).exists()
+
+        def add_check(argv: list[str], reason: str) -> None:
+            item = {"argv": argv, "reason": reason}
+            if item not in checks:
+                checks.append(item)
+
+        python_markers = ["pyproject.toml", "setup.py", "setup.cfg", "requirements.txt"]
+        for marker in python_markers:
+            if has(marker):
+                manifests.append(marker)
+        if any(has(marker) for marker in python_markers) or has("tests"):
+            stacks.append("python")
+            if has("tests") or has("pytest.ini") or has("pyproject.toml"):
+                add_check(["pytest"], "Run the Python test suite.")
+
+        if has("package.json"):
+            stacks.append("node")
+            manifests.append("package.json")
+            try:
+                package = json.loads((target / "package.json").read_text(encoding="utf-8"))
+            except (OSError, ValueError, TypeError):
+                package = {}
+            scripts = package.get("scripts") if isinstance(package, dict) else {}
+            if isinstance(scripts, dict):
+                for script in ("test", "lint", "typecheck", "build"):
+                    if script in scripts:
+                        add_check(["npm", "run", script], f"Run package.json script '{script}'.")
+
+        if has("Cargo.toml"):
+            stacks.append("rust")
+            manifests.append("Cargo.toml")
+            add_check(["cargo", "test"], "Run Rust tests.")
+            add_check(["cargo", "check"], "Run Rust type/build checks.")
+
+        if has("go.mod"):
+            stacks.append("go")
+            manifests.append("go.mod")
+            add_check(["go", "test", "./..."], "Run Go tests.")
+
+        if has("pom.xml"):
+            stacks.append("maven")
+            manifests.append("pom.xml")
+            add_check(["mvn", "test"], "Run Maven tests.")
+
+        gradle_markers = [
+            "build.gradle",
+            "build.gradle.kts",
+            "settings.gradle",
+            "settings.gradle.kts",
+            "gradlew",
+            "gradlew.bat",
+        ]
+        for marker in gradle_markers:
+            if has(marker):
+                manifests.append(marker)
+        if any(has(marker) for marker in gradle_markers):
+            stacks.append("gradle")
+            if has("gradlew"):
+                add_check(["./gradlew", "test"], "Run Gradle tests using the project wrapper.")
+            elif has("gradlew.bat"):
+                add_check(["gradlew.bat", "test"], "Run Gradle tests using the Windows wrapper.")
+            else:
+                add_check(["gradle", "test"], "Run Gradle tests.")
+
+        if has("CMakeLists.txt"):
+            stacks.append("cmake")
+            manifests.append("CMakeLists.txt")
+
+        if has(".git"):
+            stacks.append("git")
+            add_check(["git", "status", "--short"], "Inspect the working tree before and after edits.")
+            add_check(["git", "diff"], "Review unstaged changes.")
+
+        top_level = []
+        try:
+            top_level = sorted(
+                item.name + ("/" if item.is_dir() else "")
+                for item in target.iterdir()
+            )[:100]
+        except OSError:
+            pass
+
+        return {
+            "path": target.relative_to(self.root).as_posix() or ".",
+            "stacks": stacks,
+            "manifests": sorted(set(manifests)),
+            "recommended_checks": checks,
+            "top_level": top_level,
         }
 
     @staticmethod
