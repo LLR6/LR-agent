@@ -116,6 +116,25 @@ class InvariantCreateRequest(BaseModel):
     source_gene_id: str | None = None
 
 
+class ChronoForgeStartRequest(BaseModel):
+    task: str = Field(default="", max_length=100_000)
+    tournament_id: str | None = None
+    candidate_id: str | None = None
+    generations: int | None = Field(default=None, ge=1, le=10)
+    trajectories: int | None = Field(default=None, ge=1, le=6)
+
+
+class ChronoForgeStartResponse(BaseModel):
+    run_id: str
+    status: str
+
+
+class FutureObservationRequest(BaseModel):
+    category: str = Field(min_length=1, max_length=100)
+    note: str = Field(default="", max_length=5000)
+    source: str = Field(default="reality", min_length=1, max_length=200)
+
+
 class SessionSummary(BaseModel):
     id: str
     title: str
