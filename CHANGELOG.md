@@ -1,5 +1,53 @@
 # Changelog
 
+## 1.0.0 - 2026-09-27
+
+### Causal Genome Engine
+
+- Added persistent Strategy Genes with quarantine, active, contested, retired and contaminated states.
+- Added Treatment-vs-Control counterfactual ablation across isolated Forge workspaces.
+- Added repeated-trial activation thresholds so one successful run does not become trusted memory.
+- Added falsification mode that explicitly attacks a Gene's applicability, exclusions and assumptions.
+- Added context-specific Anti-Genes from harmful ablation evidence.
+- Added Gene genealogy edges and contamination propagation through descendants.
+- Added persistent causal evidence records with treatment/control scores, effect and experiment provenance.
+- Added persistent background Genome experiment jobs with interrupted recovery semantics.
+
+### Proof and long-term project constraints
+
+- Added Proof-Carrying Genes with executable verifier commands.
+- Gene verifiers run independently in both treatment and control shadow workspaces.
+- Added Invariant DNA for executable long-lived project properties.
+- Forge promotion now replays winner checks and then all active Invariant DNA in the real workspace.
+- Invariant failure automatically restores the pre-promotion workspace.
+- Proof-Carrying Patch bundles now include Invariant DNA verification evidence.
+
+### Agent behavior
+
+- Active Genes and Anti-Genes can be retrieved into Coder / Research context.
+- Quarantined Genes are not injected into normal Agent context.
+- Added Epistemic Tripwire detection for repeated failures and repeated unverified mutation loops.
+- Tripwire events are observable over the existing task event stream and Web UI.
+
+### Interfaces
+
+- Added Causal Genome REST APIs, background experiment APIs and Invariant DNA APIs.
+- Added Web UI Causal Genome panel with A/B ablation, falsification and invariant checks.
+- Added Forge-to-quarantine-Gene import control.
+- Added CLI commands: `genome-stats`, `genome-list`, `genome-add`, `genome-import`,
+  `genome-ablate`, `genome-falsify`, `genome-contaminate`, `invariant-list`,
+  `invariant-add`, and `invariant-check`.
+
+### Safety and epistemic limits
+
+- A Forge win is treated as provenance only, not causal proof.
+- Causal Genome activation requires repeated evidence thresholds.
+- Counterfactual ablation is an engineering evidence heuristic, not a randomized statistical or formal causal proof.
+- Shadow external-write protections remain active during Gene experiments.
+- Contaminated ancestry can reduce trust across descendants instead of deleting provenance history.
+- Package and API version updated to 1.0.0.
+
+
 ## 0.9.0 - 2026-09-27
 
 ### Added
