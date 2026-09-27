@@ -4,6 +4,7 @@ import pytest
 
 from lr_agent.agent import Agent
 from lr_agent.config import Settings
+from lr_agent.genome_store import GenomeStore
 from lr_agent.memory import MemoryStore
 from lr_agent.tools import ToolRegistry
 
@@ -232,3 +233,76 @@ async def test_epistemic_tripwire_interrupts_repeated_unverified_mutation_loop(
     assert tripwires
     assert tripwires[0]["tripwire"]["reason"] == "repeated_mutation_without_verification"
     assert tripwires[0]["tripwire"]["path"] == "loop.txt"
+
+
+class GenomeContextLLM:
+    async def chat(self, messages, tools=None, temperature=0.2):
+        genome_messages = [
+            item.get("content", "")
+            for item in messages
+            if item.get("role") == "system"
+            and "CAUSAL GENOME CONTEXT" in (item.get("content") or "")
+        ]
+        assert genome_messages
+        assert "verified parser gene" in genome_messages[0]
+        assert "parser invariant" in genome_messages[0]
+        return {"content": "used causal genome carefully"}
+
+
+@pytest.mark.asyncio
+async def test_agent_receives_only_active_causal_genes_and_invariants(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(
+        workspace=tmp_path / "workspace",
+        database=tmp_path / "memory.db",
+        knowledge_database=tmp_path / "knowledge.db",
+        genome_database=tmp_path / "genome.db",
+        enable_planning=False,
+        enable_review=False,
+        auto_context=False,
+        genome_enabled=True,
+        invariants_enabled=True,
+    )
+    settings.ensure_dirs()
+    genome = GenomeStore(settings.genome_database)
+    genome.create_gene(
+        name="verified parser gene",
+        instruction="Inspect token boundaries before patching.",
+        applicability=["parser"],
+        status="active",
+    )
+    genome.create_gene(
+        name="quarantined noise",
+        instruction="This should not be injected.",
+        applicability=["parser"],
+        status="quarantine",
+    )
+    genome.create_invariant(
+        name="parser invariant",
+        description="Parser smoke test must remain green.",
+        commands=[{"argv": ["pytest", "tests/test_parser.py"], "cwd": "."}],
+    )
+
+    events = []
+    async def sink(event):
+        events.append(event)
+
+    agent = Agent(
+        settings,
+        GenomeContextLLM(),
+        MemoryStore(settings.database),
+        ToolRegistry(settings),
+    )
+    response = await agent.run(
+        "fix parser",
+        mode="coder",
+        event_sink=sink,
+    )
+
+    assert response.answer == "used causal genome carefully"
+    event = next(item for item in events if item["type"] == "genome_context")
+    names = [gene["name"] for gene in event["genome"]["genes"]]
+    assert "verified parser gene" in names
+    assert "quarantined noise" not in names
+    assert event["genome"]["invariants"][0]["name"] == "parser invariant"
