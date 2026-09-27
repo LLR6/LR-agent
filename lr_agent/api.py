@@ -11,7 +11,13 @@ from .agent import Agent
 from .config import Settings
 from .llm import LLMError, OpenAICompatibleClient
 from .memory import MemoryStore
-from .models import ChatRequest, ChatResponse, SessionSummary, TaskStartResponse
+from .models import (
+    ApprovalDecision,
+    ChatRequest,
+    ChatResponse,
+    SessionSummary,
+    TaskStartResponse,
+)
 from .task_queue import TaskManager
 from .tools import ToolRegistry
 
@@ -59,6 +65,36 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if item is None:
             raise HTTPException(status_code=404, detail="Task not found")
         return item
+
+    @app.get("/api/tasks/{task_id}/approvals")
+    async def task_approvals(task_id: str) -> list[dict[str, object]]:
+        if task_manager.get(task_id) is None:
+            raise HTTPException(status_code=404, detail="Task not found")
+        return task_manager.approvals(task_id)
+
+    @app.post("/api/tasks/{task_id}/approvals/{approval_id}")
+    async def decide_task_approval(
+        task_id: str,
+        approval_id: str,
+        decision: ApprovalDecision,
+    ) -> dict[str, object]:
+        if task_manager.get(task_id) is None:
+            raise HTTPException(status_code=404, detail="Task not found")
+        accepted = task_manager.decide_approval(
+            task_id,
+            approval_id,
+            approved=decision.approved,
+        )
+        if not accepted:
+            raise HTTPException(
+                status_code=409,
+                detail="Approval is no longer pending or does not belong to this task",
+            )
+        return {
+            "task_id": task_id,
+            "approval_id": approval_id,
+            "approved": decision.approved,
+        }
 
     @app.post("/api/tasks/{task_id}/cancel")
     async def cancel_task(task_id: str) -> dict[str, object]:
