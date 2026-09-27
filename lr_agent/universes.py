@@ -509,6 +509,79 @@ class UniverseLab:
             evolve=evolve,
         )
 
+    async def verify_candidate_commands(
+        self,
+        tournament_id: str,
+        candidate_id: str,
+        commands: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        if not commands:
+            return {
+                "status": "unverified",
+                "passed": None,
+                "commands": [],
+            }
+        workspace = self._candidate_dir(tournament_id, candidate_id) / "workspace"
+        if not workspace.is_dir():
+            raise UniverseError(
+                f"Candidate workspace not found: {tournament_id}/{candidate_id}"
+            )
+        settings = self.settings.model_copy(
+            deep=True,
+            update={
+                "workspace": workspace,
+                "database": self._candidate_dir(tournament_id, candidate_id)
+                / "verifier-agent.db",
+                "knowledge_database": self._candidate_dir(tournament_id, candidate_id)
+                / "verifier-knowledge.db",
+                "approval_mode": "off",
+                "shadow_mode": True,
+                "allow_github_write": False,
+                "enable_run_snapshots": False,
+            },
+        )
+        settings.ensure_dirs()
+        tools = ToolRegistry(settings)
+        results: list[dict[str, Any]] = []
+        passed = True
+        for command in commands:
+            arguments = {
+                "argv": [str(value) for value in command.get("argv", [])],
+                "cwd": str(command.get("cwd") or "."),
+            }
+            if not arguments["argv"]:
+                results.append(
+                    {
+                        "command": command,
+                        "passed": False,
+                        "error": "empty argv",
+                    }
+                )
+                passed = False
+                break
+            if command.get("timeout_s") is not None:
+                arguments["timeout_s"] = command["timeout_s"]
+            outcome = await tools.execute("run_command", arguments)
+            payload = outcome.get("result") or {}
+            returncode = payload.get("returncode") if outcome.get("ok") else None
+            command_passed = bool(outcome.get("ok")) and returncode == 0
+            results.append(
+                {
+                    "command": command,
+                    "passed": command_passed,
+                    "returncode": returncode,
+                    "result": outcome,
+                }
+            )
+            if not command_passed:
+                passed = False
+                break
+        return {
+            "status": "passed" if passed else "failed",
+            "passed": passed,
+            "commands": results,
+        }
+
     async def _execute_agent(self, child_settings: Settings, prompt: str) -> ChatResponse:
         if self._agent_runner is not None:
             return await self._agent_runner(child_settings, prompt)
