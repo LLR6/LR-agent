@@ -5,6 +5,8 @@
 <p align="center"><img src="./docs/media/chronoforge-showcase.gif" alt="Deterministic ChronoForge showcase — not a benchmark" width="100%"></p>
 <p align="center"><sub>Deterministic showcase for explaining the workflow; not a benchmark result.</sub></p>
 
+<p align="center"><a href="./docs/media/chronoforge-showcase.mp4">▶ Watch / download the MP4 teaser</a></p>
+
 <p align="center">
   <strong>A coding agent that asks not only “does this patch work today?” — but “can it survive tomorrow?”</strong>
 </p>
