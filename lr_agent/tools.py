@@ -17,6 +17,7 @@ from urllib.parse import quote, urljoin, urlparse
 import httpx
 
 from .config import Settings
+from .embeddings import EmbeddingError, OpenAICompatibleEmbeddingClient
 from .knowledge import KnowledgeIndex
 
 
@@ -35,6 +36,11 @@ class ToolRegistry:
             settings.knowledge_database,
             max_files=settings.knowledge_max_files,
             max_file_bytes=settings.knowledge_max_file_bytes,
+        )
+        self.embedder = (
+            OpenAICompatibleEmbeddingClient(settings)
+            if settings.knowledge_embeddings
+            else None
         )
 
     def specs(self) -> list[dict[str, Any]]:
@@ -605,6 +611,85 @@ class ToolRegistry:
             raise ToolError(f"Path escapes workspace: {relative}")
         return candidate
 
+    async def rebuild_knowledge(self) -> dict[str, Any]:
+        result = await asyncio.to_thread(self.knowledge.rebuild)
+        if self.embedder is None:
+            result["embedding_enabled"] = False
+            return result
+
+        chunks = await asyncio.to_thread(self.knowledge.embedding_inputs)
+        if not chunks:
+            result["embedding_enabled"] = True
+            result["embedding_model"] = self.embedder.model
+            result["embedded_chunks"] = 0
+            return result
+
+        batch_size = min(max(self.settings.embedding_batch_size, 1), 128)
+        records: list[tuple[int, list[float]]] = []
+        try:
+            for start in range(0, len(chunks), batch_size):
+                batch = chunks[start : start + batch_size]
+                texts = [
+                    (
+                        f"FILE: {item['path']}\n"
+                        f"LINES: {item['line_start']}-{item['line_end']}\n"
+                        f"{item['content']}"
+                    )
+                    for item in batch
+                ]
+                vectors = await self.embedder.embed(texts)
+                records.extend(
+                    (int(item["id"]), vector)
+                    for item, vector in zip(batch, vectors, strict=True)
+                )
+            stored = await asyncio.to_thread(
+                self.knowledge.replace_embeddings,
+                model=self.embedder.model,
+                records=records,
+            )
+        except EmbeddingError as exc:
+            result["embedding_enabled"] = True
+            result["embedding_model"] = self.embedder.model
+            result["embedding_error"] = str(exc)
+            result["embedded_chunks"] = 0
+            return result
+
+        result["embedding_enabled"] = True
+        result["embedding_model"] = self.embedder.model
+        result["embedded_chunks"] = stored
+        return result
+
+    async def search_knowledge(
+        self,
+        query: str,
+        limit: int = 8,
+    ) -> dict[str, Any]:
+        if self.embedder is None:
+            return await asyncio.to_thread(self.knowledge.search, query, limit)
+
+        stats = await asyncio.to_thread(self.knowledge.stats)
+        models = set(stats.get("embedding_models") or [])
+        if stats.get("embeddings", 0) <= 0 or self.embedder.model not in models:
+            result = await asyncio.to_thread(self.knowledge.search, query, limit)
+            result["embedding_fallback"] = "index has no embeddings for configured model"
+            return result
+
+        try:
+            query_vector = (await self.embedder.embed([query]))[0]
+        except EmbeddingError as exc:
+            result = await asyncio.to_thread(self.knowledge.search, query, limit)
+            result["embedding_fallback"] = str(exc)
+            return result
+
+        return await asyncio.to_thread(
+            self.knowledge.hybrid_search,
+            query,
+            query_vector,
+            model=self.embedder.model,
+            limit=limit,
+            vector_weight=self.settings.hybrid_vector_weight,
+        )
+
     async def execute(
         self,
         name: str,
@@ -653,9 +738,9 @@ class ToolRegistry:
             elif name == "http_get":
                 value = await self._http_get(**arguments)
             elif name == "knowledge_index":
-                value = await asyncio.to_thread(self.knowledge.rebuild)
+                value = await self.rebuild_knowledge()
             elif name == "knowledge_search":
-                value = await asyncio.to_thread(self.knowledge.search, **arguments)
+                value = await self.search_knowledge(**arguments)
             elif name == "knowledge_stats":
                 value = await asyncio.to_thread(self.knowledge.stats)
             elif name == "github_get_repo":
