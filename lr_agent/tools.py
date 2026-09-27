@@ -41,6 +41,21 @@ class ToolRegistry:
                 },
             ),
             self._spec(
+                "search_files",
+                "Search for a text substring across UTF-8 files inside the workspace.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "minLength": 1},
+                        "path": {"type": "string", "default": "."},
+                        "glob": {"type": "string", "default": "*"},
+                        "case_sensitive": {"type": "boolean", "default": False},
+                        "limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 100},
+                    },
+                    "required": ["query"],
+                },
+            ),
+            self._spec(
                 "read_file",
                 "Read a UTF-8 text file inside the agent workspace.",
                 {
@@ -131,6 +146,8 @@ class ToolRegistry:
         try:
             if name == "list_files":
                 value = self._list_files(**arguments)
+            elif name == "search_files":
+                value = self._search_files(**arguments)
             elif name == "read_file":
                 value = self._read_file(**arguments)
             elif name == "write_file":
@@ -165,6 +182,54 @@ class ToolRegistry:
             items.append(item.relative_to(self.root).as_posix() + suffix)
         items.sort()
         return {"items": items, "truncated": len(items) >= limit}
+
+    def _search_files(
+        self,
+        query: str,
+        path: str = ".",
+        glob: str = "*",
+        case_sensitive: bool = False,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        target = self._safe_path(path)
+        if not target.exists():
+            raise ToolError(f"Path does not exist: {path}")
+        if not query:
+            raise ToolError("query cannot be empty")
+
+        needle = query if case_sensitive else query.lower()
+        matches: list[dict[str, Any]] = []
+        candidates = [target] if target.is_file() else target.rglob(glob)
+        scanned = 0
+
+        for file in candidates:
+            if not file.is_file():
+                continue
+            try:
+                if file.stat().st_size > 2_000_000:
+                    continue
+                text = file.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            scanned += 1
+            for line_number, line in enumerate(text.splitlines(), start=1):
+                haystack = line if case_sensitive else line.lower()
+                if needle in haystack:
+                    matches.append(
+                        {
+                            "path": file.relative_to(self.root).as_posix(),
+                            "line": line_number,
+                            "text": line[:500],
+                        }
+                    )
+                    if len(matches) >= limit:
+                        return {
+                            "matches": matches,
+                            "scanned_files": scanned,
+                            "truncated": True,
+                        }
+
+        return {"matches": matches, "scanned_files": scanned, "truncated": False}
 
     def _read_file(self, path: str, max_chars: int = 50000) -> dict[str, Any]:
         target = self._safe_path(path)
