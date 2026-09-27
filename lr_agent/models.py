@@ -47,6 +47,23 @@ class ChatResponse(BaseModel):
     review: ReviewReport | None = None
 
 
+class TaskStartResponse(BaseModel):
+    task_id: str
+    status: str
+
+
+class TaskSummary(BaseModel):
+    id: str
+    status: str
+    message: str
+    mode: str
+    session_id: str | None = None
+    run_id: str | None = None
+    error: str | None = None
+    created_at: str
+    updated_at: str
+
+
 class SessionSummary(BaseModel):
     id: str
     title: str
