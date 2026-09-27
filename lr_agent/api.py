@@ -22,7 +22,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     tools = ToolRegistry(settings)
     agent = Agent(settings, llm, memory, tools)
 
-    app = FastAPI(title="LR-Agent", version="0.1.0")
+    app = FastAPI(title="LR-Agent", version="0.2.0")
     web_index = Path(__file__).with_name("web") / "index.html"
 
     @app.get("/")
@@ -42,6 +42,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/sessions", response_model=list[SessionSummary])
     async def sessions() -> list[dict[str, str]]:
         return memory.list_sessions()
+
+    @app.get("/api/runs")
+    async def runs(limit: int = 50) -> list[dict[str, object]]:
+        safe_limit = min(max(limit, 1), 200)
+        return memory.list_runs(safe_limit)
+
+    @app.get("/api/runs/{run_id}")
+    async def run_detail(run_id: str) -> dict[str, object]:
+        item = memory.get_run(run_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail="Run not found")
+        return item
 
     @app.get("/api/sessions/{session_id}/messages")
     async def session_messages(session_id: str) -> list[dict[str, str]]:
