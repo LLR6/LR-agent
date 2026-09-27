@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use LR-Agent or its research ideas in academic work, please cite the repository and version used."
+title: "LR-Agent: Causal Genome and ChronoForge for Coding Agents"
+type: software
+authors:
+  - family-names: "LLR6"
+repository-code: "https://github.com/LLR6/LR-agent"
+url: "https://github.com/LLR6/LR-agent"
+license: MIT
+version: "1.1.0"
+date-released: 2026-09-27
+keywords:
+  - coding-agent
+  - llm-agent
+  - software-engineering
+  - causal-memory
+  - software-evolution
+  - chronoforge
