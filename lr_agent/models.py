@@ -81,6 +81,7 @@ class UniverseStartResponse(BaseModel):
 
 class UniversePromoteRequest(BaseModel):
     candidate_id: str | None = None
+    verify: bool = True
 
 
 class SessionSummary(BaseModel):
