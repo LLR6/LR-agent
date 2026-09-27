@@ -162,3 +162,33 @@ from the promotion backup.
 The generated Proof-Carrying Patch is an evidence bundle, not a formal mathematical proof.
 It records what changed and which executable checks passed, but it cannot prove the absence
 of all bugs or external side effects.
+
+
+## Causal Genome / Invariant DNA boundaries
+
+The Causal Genome is an **experimental evidence system**, not a formal proof engine.
+
+- A Gene imported from Forge remains quarantined until repeated treatment-vs-control
+  experiments satisfy configured thresholds.
+- Counterfactual treatment and control runs are separate model executions. Model
+  stochasticity, tool ordering, environment state and test quality can all confound the
+  measured effect. Treat the score as falsifiable engineering evidence, not a guaranteed
+  causal estimate.
+- Anti-Genes record negative evidence and should increase caution; they are not global
+  prohibitions.
+- Gene contamination propagation preserves provenance while lowering trust in descendants.
+  It does not prove that every descendant is wrong.
+- Proof-Carrying Gene verifiers and Invariant DNA are only as strong as the executable checks
+  provided. A passing test suite cannot prove the absence of all defects.
+- Invariant DNA commands execute under the same command allowlist and OS-user permissions as
+  other LR-Agent commands. Do not register untrusted commands as invariants.
+- Genome experiment jobs may consume substantially more model/tool resources because every
+  trial runs at least a treatment and control Agent.
+
+## Epistemic Tripwire boundary
+
+The Epistemic Tripwire detects simple observable failure patterns such as repeated command
+failures or repeated direct mutations of the same path without a successful recognized
+verification command. It is a guardrail against mechanical loops, not a detector of every
+reasoning mistake. A task can still be wrong without triggering the Tripwire, and a legitimate
+iterative edit may trigger it conservatively.
