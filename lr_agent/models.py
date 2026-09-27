@@ -47,6 +47,10 @@ class ChatResponse(BaseModel):
     review: ReviewReport | None = None
 
 
+class ApprovalDecision(BaseModel):
+    approved: bool
+
+
 class TaskStartResponse(BaseModel):
     task_id: str
     status: str
