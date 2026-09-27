@@ -31,7 +31,7 @@ jobs:
           -i docs/media/chronoforge-showcase.gif
           -movflags faststart
           -pix_fmt yuv420p
-          -vf "fps=30,scale=1200:675:flags=lanczos"
+          -vf "fps=30,scale=1200:674:flags=lanczos"
           docs/media/chronoforge-showcase.mp4
 
       - name: Commit MP4
