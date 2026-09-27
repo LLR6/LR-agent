@@ -238,7 +238,11 @@ class ChronoForge:
         return {
             "stacks": list(payload.get("stacks") or []),
             "manifests": list(payload.get("manifests") or []),
-            "checks": list(payload.get("checks") or []),
+            "checks": list(
+                payload.get("recommended_checks")
+                or payload.get("checks")
+                or []
+            ),
         }
 
     @staticmethod
