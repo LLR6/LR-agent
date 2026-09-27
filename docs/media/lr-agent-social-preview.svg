@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">LR-Agent — Code that survives tomorrow</title>
+  <desc id="desc">ChronoForge, Causal Genome and Counterfactual Forge research coding agent</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#070a13"/>
+      <stop offset="0.55" stop-color="#0d1325"/>
+      <stop offset="1" stop-color="#160d2b"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#6ee7ff"/>
+      <stop offset="0.5" stop-color="#8b5cf6"/>
+      <stop offset="1" stop-color="#ec4899"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="630" rx="36" fill="url(#bg)"/>
+  <circle cx="1040" cy="80" r="210" fill="#8b5cf6" opacity="0.08"/>
+  <circle cx="110" cy="565" r="230" fill="#22d3ee" opacity="0.06"/>
+
+  <g opacity="0.16" stroke="#94a3b8" stroke-width="1">
+    <path d="M0 105H1200M0 210H1200M0 315H1200M0 420H1200M0 525H1200"/>
+    <path d="M150 0V630M300 0V630M450 0V630M600 0V630M750 0V630M900 0V630M1050 0V630"/>
+  </g>
+
+  <text x="72" y="104" fill="#f8fafc" font-size="58" font-weight="800" font-family="Inter,Segoe UI,Arial,sans-serif">LR-Agent</text>
+  <rect x="72" y="124" width="455" height="5" rx="2.5" fill="url(#accent)" filter="url(#glow)"/>
+  <text x="72" y="178" fill="#cbd5e1" font-size="27" font-weight="600" font-family="Inter,Segoe UI,Arial,sans-serif">Code that survives tomorrow.</text>
+  <text x="72" y="220" fill="#94a3b8" font-size="20" font-family="Inter,Segoe UI,Arial,sans-serif">A research coding agent for falsifiable strategy learning</text>
+  <text x="72" y="250" fill="#94a3b8" font-size="20" font-family="Inter,Segoe UI,Arial,sans-serif">and prospective patch aging.</text>
+
+  <g font-family="Inter,Segoe UI,Arial,sans-serif">
+    <rect x="72" y="310" width="298" height="120" rx="22" fill="#0f172a" stroke="#22d3ee" stroke-opacity="0.55"/>
+    <text x="96" y="350" fill="#67e8f9" font-size="18" font-weight="700">01 · COUNTERFACTUAL FORGE</text>
+    <text x="96" y="384" fill="#e2e8f0" font-size="18">Competing real patches</text>
+    <text x="96" y="410" fill="#94a3b8" font-size="15">isolated · tested · evidence-ranked</text>
+
+    <rect x="404" y="310" width="298" height="120" rx="22" fill="#0f172a" stroke="#8b5cf6" stroke-opacity="0.65"/>
+    <text x="428" y="350" fill="#c4b5fd" font-size="18" font-weight="700">02 · CAUSAL GENOME</text>
+    <text x="428" y="384" fill="#e2e8f0" font-size="18">Strategies must earn trust</text>
+    <text x="428" y="410" fill="#94a3b8" font-size="15">ablation · falsification · anti-gene</text>
+
+    <rect x="736" y="310" width="392" height="120" rx="22" fill="#0f172a" stroke="#ec4899" stroke-opacity="0.6"/>
+    <text x="760" y="350" fill="#f9a8d4" font-size="18" font-weight="700">03 · CHRONOFORGE</text>
+    <text x="760" y="384" fill="#e2e8f0" font-size="18">Let today's patch live through future repos</text>
+    <text x="760" y="410" fill="#94a3b8" font-size="15">sequential generations · survival curve · invariants</text>
+  </g>
+
+  <g stroke="url(#accent)" stroke-width="4" fill="none" opacity="0.75">
+    <path d="M370 370H404"/>
+    <path d="M702 370H736"/>
+  </g>
+  <g fill="#e2e8f0">
+    <circle cx="387" cy="370" r="5"/>
+    <circle cx="719" cy="370" r="5"/>
+  </g>
+
+  <g font-family="ui-monospace,SFMono-Regular,Consolas,monospace">
+    <text x="72" y="494" fill="#64748b" font-size="16">seed</text>
+    <text x="150" y="494" fill="#67e8f9" font-size="16">→ g1</text>
+    <text x="220" y="494" fill="#a78bfa" font-size="16">→ g2</text>
+    <text x="290" y="494" fill="#f0abfc" font-size="16">→ g3</text>
+    <text x="360" y="494" fill="#f9a8d4" font-size="16">→ PATCH LIFE REPORT</text>
+  </g>
+
+  <text x="72" y="565" fill="#f8fafc" font-size="18" font-weight="700" font-family="Inter,Segoe UI,Arial,sans-serif">github.com/LLR6/LR-agent</text>
+  <text x="1128" y="565" text-anchor="end" fill="#64748b" font-size="16" font-family="Inter,Segoe UI,Arial,sans-serif">MIT · Python 3.11+</text>
+</svg>
