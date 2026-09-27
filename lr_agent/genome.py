@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -32,6 +33,98 @@ class CausalGenomeEngine:
         self.settings = settings
         self.store = store or GenomeStore(settings.genome_database)
         self.universes = universe_lab or UniverseLab(settings)
+        self._jobs: dict[str, asyncio.Task[Any]] = {}
+        self.store.mark_interrupted_jobs()
+
+    def start_ablation(
+        self,
+        gene_id: str,
+        task: str,
+        *,
+        trials: int = 1,
+        falsification: bool = False,
+    ) -> dict[str, Any]:
+        experiment_type = "falsification" if falsification else "ablation"
+        trials = min(max(int(trials), 1), 5)
+        job = self.store.create_job(
+            gene_id=gene_id,
+            task=task,
+            experiment_type=experiment_type,
+            trials=trials,
+        )
+        job_id = str(job["id"])
+        task_obj = asyncio.create_task(
+            self._run_job(
+                job_id,
+                gene_id=gene_id,
+                task=task,
+                trials=trials,
+                falsification=falsification,
+            )
+        )
+        self._jobs[job_id] = task_obj
+        task_obj.add_done_callback(
+            lambda _task, jid=job_id: self._jobs.pop(jid, None)
+        )
+        return job
+
+    async def _run_job(
+        self,
+        job_id: str,
+        *,
+        gene_id: str,
+        task: str,
+        trials: int,
+        falsification: bool,
+    ) -> None:
+        self.store.update_job(job_id, status="running")
+        try:
+            result = await self.ablate(
+                gene_id,
+                task,
+                trials=trials,
+                falsification=falsification,
+            )
+        except asyncio.CancelledError:
+            self.store.update_job(
+                job_id,
+                status="cancelled",
+                error="Experiment cancelled.",
+            )
+            raise
+        except Exception as exc:
+            self.store.update_job(
+                job_id,
+                status="failed",
+                error=f"{type(exc).__name__}: {exc}",
+            )
+            return
+        self.store.update_job(
+            job_id,
+            status="completed",
+            result=result,
+        )
+
+    def get_job(self, job_id: str) -> dict[str, Any] | None:
+        return self.store.get_job(job_id)
+
+    def list_jobs(self, limit: int = 100) -> list[dict[str, Any]]:
+        return self.store.list_jobs(limit)
+
+    async def cancel_job(self, job_id: str) -> bool:
+        task = self._jobs.get(job_id)
+        item = self.store.get_job(job_id)
+        if item is None:
+            return False
+        if task is None:
+            if item["status"] == "queued":
+                self.store.update_job(job_id, status="cancelled", error="Cancelled.")
+                return True
+            return False
+        if task.done():
+            return False
+        task.cancel()
+        return True
 
     def create_gene(
         self,
