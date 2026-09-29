@@ -11,6 +11,11 @@
 <p align="center"><a href="https://github.com/LLR6">Profile</a> · <a href="https://github.com/LLR6?tab=repositories">All projects</a> · <a href="https://github.com/LLR6/LR-agent/issues">Issues</a></p>
 <!-- LR-LAB-CHROME:END -->
 
+<!-- LR-PROJECT-DOCS:START -->
+### Project docs
+[Research](./docs/research/README.md) · [Benchmarks](./docs/BENCHMARKS.md) · [Roadmap](./docs/ROADMAP.md) · [Releasing](./docs/RELEASING.md) · [Security](./SECURITY.md) · [Contributing](./CONTRIBUTING.md)
+<!-- LR-PROJECT-DOCS:END -->
+
 
 <p align="center"><img src="./docs/media/lr-agent-social-preview.svg" alt="LR-Agent — Code that survives tomorrow" width="100%"></p>
 
