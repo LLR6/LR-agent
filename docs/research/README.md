@@ -177,6 +177,7 @@ If a prior system is later found, the novelty document should be updated rather 
 - [Research Roadmap](./ROADMAP.md)
 - [Bibliography](./BIBLIOGRAPHY.md)
 - [Research-to-Implementation Map](./IMPLEMENTATION_MAP.md)
+- [Claim Ledger: implemented vs tested vs hypothesis](./CLAIM_LEDGER.md)
 
 ## Core research hypotheses
 
