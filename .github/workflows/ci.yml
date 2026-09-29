@@ -25,6 +25,8 @@ jobs:
         run: pytest
       - name: Validate research manifest example
         run: python scripts/validate_research_manifest.py docs/research/experiment-manifest.example.json
+      - name: Fingerprint research manifest example
+        run: python scripts/fingerprint_experiment.py docs/research/experiment-manifest.example.json --artifact docs/research/CLAIM_LEDGER.md --output /tmp/research-artifacts.json
       - name: Check Web UI JavaScript syntax
         shell: bash
         run: |
