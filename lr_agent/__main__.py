@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import shlex
+from importlib.metadata import PackageNotFoundError, version
 
 import typer
 import uvicorn
@@ -21,6 +22,33 @@ from .universes import UniverseError, UniverseLab
 
 cli = typer.Typer(help="LR-Agent local autonomous assistant")
 console = Console()
+
+
+def package_version() -> str:
+    try:
+        return version("lr-agent")
+    except PackageNotFoundError:
+        return "dev"
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(f"lr-agent {package_version()}")
+        raise typer.Exit()
+
+
+@cli.callback()
+def root(
+    version_: bool = typer.Option(
+        False,
+        "--version",
+        callback=_version_callback,
+        is_eager=True,
+        help="Show version and exit.",
+    ),
+) -> None:
+    """LR-Agent command group."""
+    _ = version_
 
 
 async def _terminal_approval(
