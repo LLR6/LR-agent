@@ -58,6 +58,7 @@
 | See the idea in 90 seconds | [ChronoForge showcase](./docs/media/chronoforge-showcase.gif) |
 | Run a local demo | [5-minute demo](./docs/DEMO_CHRONOFORGE.md) |
 | Read the research framing | [Research notes](./docs/research/README.md) |
+| Check what is implemented vs still a hypothesis | [Claim Ledger](./docs/research/CLAIM_LEDGER.md) |
 | Inspect the implementation | [`lr_agent/`](./lr_agent) |
 | Check reproducibility | [Tests](./tests) · [CI](https://github.com/LLR6/LR-agent/actions) |
 
