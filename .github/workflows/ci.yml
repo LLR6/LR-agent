@@ -29,6 +29,8 @@ jobs:
         run: pip install -e ".[dev]"
       - name: Check release metadata consistency
         run: python scripts/check_release_metadata.py
+      - name: Check installed dependency consistency
+        run: python -m pip check
       - name: Compile Python
         run: python -m compileall -q lr_agent
       - name: Build wheel
