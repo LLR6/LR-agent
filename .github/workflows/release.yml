@@ -57,6 +57,45 @@ jobs:
       - name: Generate checksums
         run: sha256sum dist/* > SHA256SUMS.txt
 
+      - name: Smoke-test built wheel
+        shell: bash
+        run: |
+          python -m venv /tmp/release-wheel-smoke
+          /tmp/release-wheel-smoke/bin/python -m pip install --upgrade pip
+          /tmp/release-wheel-smoke/bin/python -m pip install dist/*.whl
+          /tmp/release-wheel-smoke/bin/lr-agent --version
+
+      - name: Generate release provenance
+        shell: bash
+        run: |
+          sha256sum dist/* > SHA256SUMS.txt
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import tomllib
+          from pathlib import Path
+
+          version = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+          files = []
+          for path in sorted(Path("dist").iterdir()):
+              if not path.is_file():
+                  continue
+              digest = hashlib.sha256(path.read_bytes()).hexdigest()
+              files.append({"name": path.name, "bytes": path.stat().st_size, "sha256": digest})
+          Path("release-metadata.json").write_text(
+              json.dumps({
+                  "schema": "lr-release-provenance/v1",
+                  "repository": os.environ["GITHUB_REPOSITORY"],
+                  "version": version,
+                  "tag": os.environ["GITHUB_REF_NAME"],
+                  "commit": os.environ["GITHUB_SHA"],
+                  "artifacts": files,
+              }, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
