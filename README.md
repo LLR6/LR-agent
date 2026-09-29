@@ -1465,3 +1465,24 @@ Author: **LLR6**
 <p align="center"><sub>Part of <a href="https://github.com/LLR6">LR Lab</a> · Security × AI × Android × Automation</sub><br><sub>Build things that are useful, inspectable, and reproducible.</sub></p>
 <!-- LR-LAB-FOOTER:END -->
 
+<!-- LR-DEEP-CONTENT:START -->
+## Experiment artifact fingerprinting
+
+研究运行现在可以在 Manifest 之外再生成一个 artifact bundle：
+
+```bash
+python scripts/fingerprint_experiment.py \
+  docs/research/experiment-manifest.example.json \
+  --artifact artifacts/run-001/result.json \
+  --artifact artifacts/run-001/tool-trace.jsonl \
+  --output artifacts/run-001/bundle.json
+```
+
+Bundle 会记录：
+
+- canonical Manifest SHA-256；
+- 每个保留 artifact 的路径、字节数与 SHA-256；
+- 整个 artifact 列表的 bundle SHA-256。
+
+它不能证明实验结论正确，但能把“这份结果究竟对应哪个实验定义、哪些保留文件”固定下来，方便复核和后续复现。
+<!-- LR-DEEP-CONTENT:END -->
