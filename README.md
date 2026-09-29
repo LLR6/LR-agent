@@ -32,7 +32,27 @@
   <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-blue">
   <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-green">
   <img alt="Version 1.1.0" src="https://img.shields.io/badge/version-1.1.0-8b5cf6">
+  <a href="https://github.com/LLR6/LR-agent/stargazers"><img alt="GitHub Stars" src="https://img.shields.io/github/stars/LLR6/LR-agent?style=flat&logo=github"></a>
 </p>
+
+
+> **TL;DR — LR-Agent is an experimental coding-agent lab for testing whether a patch stays reliable after the repository changes.**  
+> It combines isolated candidate patches, evidence-based strategy validation, and multi-generation repository aging instead of stopping at “tests pass today”.
+
+### Start here
+
+| If you want to… | Open this |
+|---|---|
+| See the idea in 90 seconds | [ChronoForge showcase](./docs/media/chronoforge-showcase.gif) |
+| Run a local demo | [5-minute demo](./docs/DEMO_CHRONOFORGE.md) |
+| Read the research framing | [Research notes](./docs/research/README.md) |
+| Inspect the implementation | [`lr_agent/`](./lr_agent) |
+| Check reproducibility | [Tests](./tests) · [CI](https://github.com/LLR6/LR-agent/actions) |
+
+**Why it may be worth following:** the project is exploring a concrete question that most coding agents largely ignore — *how do we compare two patches that both pass today, but age differently under future maintenance?*
+
+If that question is useful to your own Agent / software-reliability work, a ⭐ helps you find the project again as the experiments evolve.
+
 
 ## 30 秒看懂 LR-Agent
 
