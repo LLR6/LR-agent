@@ -1,52 +1,28 @@
-from __future__ import annotations
-
 import re
 from pathlib import Path
 
 
-def project_version() -> str:
-    text = Path("pyproject.toml").read_text(encoding="utf-8")
-    in_project = False
-    for raw in text.splitlines():
-        line = raw.strip()
-        if line.startswith("[") and line.endswith("]"):
-            in_project = line == "[project]"
-            continue
-        if in_project:
-            match = re.match(r'version\s*=\s*"([^"]+)"', line)
-            if match:
-                return match.group(1)
-    raise SystemExit("could not find [project].version in pyproject.toml")
-
-
-def citation_version() -> str:
-    text = Path("CITATION.cff").read_text(encoding="utf-8")
-    match = re.search(r'(?m)^version:\s*["\']?([^"\'\n]+)["\']?\s*$', text)
+def first(pattern: str, text: str, label: str) -> str:
+    match = re.search(pattern, text, re.M)
     if not match:
-        raise SystemExit("could not find version in CITATION.cff")
-    return match.group(1).strip()
+        raise SystemExit(f"missing {label}")
+    return match.group(1)
 
 
-def changelog_contains(version: str) -> bool:
-    text = Path("CHANGELOG.md").read_text(encoding="utf-8")
-    return bool(re.search(rf"(?m)^##\s+{re.escape(version)}(?:\s+-|\s*$)", text))
+pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
+citation = Path("CITATION.cff").read_text(encoding="utf-8")
+changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
 
+package_version = first(r'^version\s*=\s*"([^"]+)"', pyproject, "pyproject version")
+citation_version = first(r'^version:\s*"?([^"\n]+)"?\s*$', citation, "CITATION version").strip()
+released_versions = re.findall(r"^##\s+(\d+\.\d+\.\d+)\b", changelog, re.M)
+if not released_versions:
+    raise SystemExit("CHANGELOG has no released semantic version")
+changelog_version = released_versions[0]
 
-def main() -> int:
-    package = project_version()
-    citation = citation_version()
-    errors = []
-    if citation != package:
-        errors.append(f"CITATION.cff version {citation!r} != package version {package!r}")
-    if not changelog_contains(package):
-        errors.append(f"CHANGELOG.md has no release heading for {package}")
-    if errors:
-        for error in errors:
-            print(f"ERROR: {error}")
-        return 2
-    print(f"release metadata consistent: {package}")
-    return 0
+if package_version != citation_version:
+    raise SystemExit(f"version mismatch: pyproject={package_version} citation={citation_version}")
+if package_version != changelog_version:
+    raise SystemExit(f"version mismatch: pyproject={package_version} changelog={changelog_version}")
 
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+print(f"release metadata consistent: {package_version}")
