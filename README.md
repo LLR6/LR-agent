@@ -14,6 +14,7 @@
 <!-- LR-PROJECT-DOCS:START -->
 ### Project docs
 [Research](./docs/research/README.md) · [Benchmarks](./docs/BENCHMARKS.md) · [Roadmap](./docs/ROADMAP.md) · [Compatibility](./docs/COMPATIBILITY.md) · [Releasing](./docs/RELEASING.md) · [Security](./SECURITY.md) · [Contributing](./CONTRIBUTING.md) · [Support](./SUPPORT.md)
+ · [Change risk](./docs/CHANGE_RISK.md) · [Failure modes](./docs/FAILURE_MODES.md) · [Migrations](./docs/MIGRATIONS.md)
 <!-- LR-PROJECT-DOCS:END -->
 
 
