@@ -5,24 +5,10 @@
   <a href="https://github.com/LLR6"><img alt="LR Lab" src="https://img.shields.io/badge/LR_LAB-0x4C52-0D1117?style=for-the-badge&logo=github&logoColor=white"></a>
   <img alt="AI AGENT RESEARCH" src="https://img.shields.io/badge/AI_AGENT_RESEARCH-8B5CF6?style=for-the-badge">
 </p>
-
-<p align="center">
-  <strong>Code that survives tomorrow.</strong><br>
-  <sub>Counterfactual patches · causal evidence · repository aging</sub>
-</p>
-
-<p align="center">
-  <a href="https://github.com/LLR6/LR-agent/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/LLR6/LR-agent?style=flat-square&logo=github&label=stars"></a>
-  <img alt="Last commit" src="https://img.shields.io/github/last-commit/LLR6/LR-agent?style=flat-square">
-  <img alt="Maintained" src="https://img.shields.io/badge/status-active-success?style=flat-square">
-</p>
-
-<p align="center">
-  <a href="https://github.com/LLR6">Profile</a> ·
-  <a href="https://github.com/LLR6?tab=repositories">All projects</a> ·
-  <a href="https://github.com/LLR6/LR-agent/issues">Issues</a>
-</p>
-
+<p align="center"><strong>Code that survives tomorrow.</strong><br><sub>Counterfactual patches · causal evidence · repository aging</sub></p>
+<p align="center"><a href="https://github.com/LLR6/LR-agent/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/LLR6/LR-agent?style=flat-square&logo=github&label=stars"></a>
+  <img alt="Last commit" src="https://img.shields.io/github/last-commit/LLR6/LR-agent?style=flat-square"> <img alt="Maintained" src="https://img.shields.io/badge/status-active-success?style=flat-square"></p>
+<p align="center"><a href="https://github.com/LLR6">Profile</a> · <a href="https://github.com/LLR6?tab=repositories">All projects</a> · <a href="https://github.com/LLR6/LR-agent/issues">Issues</a></p>
 <!-- LR-LAB-CHROME:END -->
 
 
@@ -1475,10 +1461,6 @@ Author: **LLR6**
 
 <!-- LR-LAB-FOOTER:START -->
 ---
-
-<p align="center">
-  <sub>Part of <a href="https://github.com/LLR6">LR Lab</a> · Security × AI × Android × Automation</sub><br>
-  <sub>Build things that are useful, inspectable, and reproducible.</sub>
-</p>
+<p align="center"><sub>Part of <a href="https://github.com/LLR6">LR Lab</a> · Security × AI × Android × Automation</sub><br><sub>Build things that are useful, inspectable, and reproducible.</sub></p>
 <!-- LR-LAB-FOOTER:END -->
 
