@@ -58,8 +58,13 @@ jobs:
           path: coverage.xml
       - name: Validate research manifest example
         run: python scripts/validate_research_manifest.py docs/research/experiment-manifest.example.json
+      - name: Validate research JSON schemas
+        run: |
+          python scripts/validate_json_schema.py schemas/research-manifest.schema.json docs/research/experiment-manifest.example.json
       - name: Fingerprint research manifest example
         run: python scripts/fingerprint_experiment.py docs/research/experiment-manifest.example.json --artifact docs/research/CLAIM_LEDGER.md --output /tmp/research-artifacts.json
+      - name: Validate artifact bundle schema
+        run: python scripts/validate_json_schema.py schemas/artifact-bundle.schema.json /tmp/research-artifacts.json
       - name: Check Web UI JavaScript syntax
         shell: bash
         run: |
