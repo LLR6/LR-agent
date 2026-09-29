@@ -29,6 +29,8 @@ jobs:
         run: pip install -e ".[dev]"
       - name: Check release metadata consistency
         run: python scripts/check_release_metadata.py
+      - name: Check local documentation links
+        run: python scripts/check_local_links.py
       - name: Check installed dependency consistency
         run: python -m pip check
       - name: Compile Python
