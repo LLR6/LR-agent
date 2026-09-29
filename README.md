@@ -13,7 +13,7 @@
 
 <!-- LR-PROJECT-DOCS:START -->
 ### Project docs
-[Research](./docs/research/README.md) · [Benchmarks](./docs/BENCHMARKS.md) · [Roadmap](./docs/ROADMAP.md) · [Releasing](./docs/RELEASING.md) · [Security](./SECURITY.md) · [Contributing](./CONTRIBUTING.md)
+[Research](./docs/research/README.md) · [Benchmarks](./docs/BENCHMARKS.md) · [Roadmap](./docs/ROADMAP.md) · [Compatibility](./docs/COMPATIBILITY.md) · [Releasing](./docs/RELEASING.md) · [Security](./SECURITY.md) · [Contributing](./CONTRIBUTING.md) · [Support](./SUPPORT.md)
 <!-- LR-PROJECT-DOCS:END -->
 
 
