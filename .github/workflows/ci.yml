@@ -20,8 +20,8 @@ jobs:
       matrix:
         python-version: ["3.11", "3.12"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -46,7 +46,7 @@ jobs:
           /tmp/lr-wheel-smoke/bin/python -m pip install --upgrade pip
           /tmp/lr-wheel-smoke/bin/python -m pip install dist/*.whl
           /tmp/lr-wheel-smoke/bin/lr-agent --version
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: LR-agent-wheel-${{ matrix.python-version || 'py' }}
           path: dist/*.whl
@@ -58,7 +58,7 @@ jobs:
           coverage run --source=lr_agent -m pytest
           coverage report -m --fail-under=50
           coverage xml -o coverage.xml
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: LR-agent-coverage-${{ matrix.python-version || 'py' }}
           path: coverage.xml
