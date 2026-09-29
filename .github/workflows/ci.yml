@@ -33,6 +33,13 @@ jobs:
         run: |
           python -m pip install "build>=1.2"
           python -m build --wheel
+      - name: Smoke-test built wheel
+        shell: bash
+        run: |
+          python -m venv /tmp/lr-wheel-smoke
+          /tmp/lr-wheel-smoke/bin/python -m pip install --upgrade pip
+          /tmp/lr-wheel-smoke/bin/python -m pip install dist/*.whl
+          /tmp/lr-wheel-smoke/bin/lr-agent --version
       - uses: actions/upload-artifact@v4
         with:
           name: LR-agent-wheel-${{ matrix.python-version || 'py' }}
