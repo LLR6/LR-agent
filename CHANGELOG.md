@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Research reproducibility
+
+- Added a Claim Ledger separating implemented mechanisms, tested behavior, research hypotheses and planned ideas.
+- Added versioned research-run manifests with repository snapshot, task, model/scaffold, condition, repeats, seeds, outputs and leakage controls.
+- Added manifest validation that rejects embedded secret-like values.
+- Added experiment artifact fingerprint bundles with canonical Manifest SHA-256, per-artifact SHA-256 and bundle SHA-256.
+- Added CI validation for the example research manifest and artifact bundle.
+- Added a benchmark/evaluation index and refreshed research documentation.
+
+### Project maintenance
+
+- Added an explicit project roadmap with current foundation, next evaluation work and non-goals.
+- Clarified that current infrastructure does not establish superiority over strong coding-agent baselines.
+
+
 ## 1.1.0 - 2026-09-27
 
 ### ChronoForge
