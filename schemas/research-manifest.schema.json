@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/LLR6/LR-agent/schemas/research-manifest.schema.json",
+  "title": "LR-Agent research run manifest",
+  "type": "object",
+  "required": ["schema", "snapshot", "task", "agent", "condition", "repeats", "outputs"],
+  "properties": {
+    "schema": {"const": "lr-agent-research-run/v1"},
+    "snapshot": {
+      "type": "object",
+      "required": ["repository", "commit"],
+      "properties": {
+        "repository": {"type": "string", "minLength": 1},
+        "commit": {"type": "string", "minLength": 7}
+      },
+      "additionalProperties": true
+    },
+    "task": {
+      "type": "object",
+      "required": ["id", "description"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "description": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": true
+    },
+    "agent": {
+      "type": "object",
+      "required": ["model", "scaffold"],
+      "properties": {
+        "model": {"type": "string", "minLength": 1},
+        "scaffold": {"type": "string", "minLength": 1},
+        "configuration": {"type": "object"}
+      },
+      "additionalProperties": true
+    },
+    "condition": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "baseline": {"type": "string"},
+        "notes": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "repeats": {"type": "integer", "minimum": 1},
+    "seeds": {
+      "type": "array",
+      "items": {"type": "integer"},
+      "uniqueItems": true
+    },
+    "outputs": {
+      "type": "object",
+      "required": ["directory"],
+      "properties": {
+        "directory": {"type": "string", "minLength": 1},
+        "retain_tool_traces": {"type": "boolean"},
+        "retain_failed_runs": {"type": "boolean"},
+        "retain_candidate_patches": {"type": "boolean"}
+      },
+      "additionalProperties": true
+    },
+    "leakage_controls": {"type": "object"}
+  },
+  "additionalProperties": true
+}
