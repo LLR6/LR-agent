@@ -1,0 +1,36 @@
+{
+  "schema": "lr-agent-research-run/v1",
+  "snapshot": {
+    "repository": "owner/example-repo",
+    "commit": "0123456789abcdef"
+  },
+  "task": {
+    "id": "chrono-001",
+    "description": "Compare two present-time-correct patches under matched future maintenance scenarios."
+  },
+  "agent": {
+    "model": "record-exact-provider-model-id",
+    "scaffold": "LR-Agent",
+    "configuration": {
+      "temperature": 0,
+      "max_steps": 12
+    }
+  },
+  "condition": {
+    "name": "chronoforge-sequential",
+    "baseline": "present-tests-only",
+    "notes": "All patch candidates must receive the same future scenario matrix."
+  },
+  "repeats": 5,
+  "seeds": [1, 2, 3, 4, 5],
+  "outputs": {
+    "directory": "artifacts/chrono-001",
+    "retain_tool_traces": true,
+    "retain_failed_runs": true,
+    "retain_candidate_patches": true
+  },
+  "leakage_controls": {
+    "future_commits_hidden": true,
+    "held_out_repository": true
+  }
+}
