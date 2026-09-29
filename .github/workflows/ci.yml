@@ -53,8 +53,8 @@ jobs:
       - name: Coverage snapshot
         run: |
           python -m pip install "coverage>=7.6"
-          coverage run -m pytest
-          coverage report -m
+          coverage run --source=lr_agent -m pytest
+          coverage report -m --fail-under=50
           coverage xml -o coverage.xml
       - uses: actions/upload-artifact@v4
         with:
