@@ -1,5 +1,31 @@
 # LR-Agent
 
+<!-- LR-LAB-CHROME:START -->
+<p align="center">
+  <a href="https://github.com/LLR6"><img alt="LR Lab" src="https://img.shields.io/badge/LR_LAB-0x4C52-0D1117?style=for-the-badge&logo=github&logoColor=white"></a>
+  <img alt="AI AGENT RESEARCH" src="https://img.shields.io/badge/AI_AGENT_RESEARCH-8B5CF6?style=for-the-badge">
+</p>
+
+<p align="center">
+  <strong>Code that survives tomorrow.</strong><br>
+  <sub>Counterfactual patches · causal evidence · repository aging</sub>
+</p>
+
+<p align="center">
+  <a href="https://github.com/LLR6/LR-agent/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/LLR6/LR-agent?style=flat-square&logo=github&label=stars"></a>
+  <img alt="Last commit" src="https://img.shields.io/github/last-commit/LLR6/LR-agent?style=flat-square">
+  <img alt="Maintained" src="https://img.shields.io/badge/status-active-success?style=flat-square">
+</p>
+
+<p align="center">
+  <a href="https://github.com/LLR6">Profile</a> ·
+  <a href="https://github.com/LLR6?tab=repositories">All projects</a> ·
+  <a href="https://github.com/LLR6/LR-agent/issues">Issues</a>
+</p>
+
+<!-- LR-LAB-CHROME:END -->
+
+
 <p align="center"><img src="./docs/media/lr-agent-social-preview.svg" alt="LR-Agent — Code that survives tomorrow" width="100%"></p>
 
 <p align="center"><img src="./docs/media/chronoforge-showcase.gif" alt="Deterministic ChronoForge showcase — not a benchmark" width="100%"></p>
@@ -1446,3 +1472,13 @@ GitHub Actions 会在 Python 3.11 和 3.12 上运行同一套测试，并额外�
 ---
 
 Author: **LLR6**
+
+<!-- LR-LAB-FOOTER:START -->
+---
+
+<p align="center">
+  <sub>Part of <a href="https://github.com/LLR6">LR Lab</a> · Security × AI × Android × Automation</sub><br>
+  <sub>Build things that are useful, inspectable, and reproducible.</sub>
+</p>
+<!-- LR-LAB-FOOTER:END -->
+
