@@ -1,0 +1,68 @@
+BASELINE: actual pytest exit 0
+..                                                                       [100%]
+2 passed in 0.01s
+
+MAINTENANCE: add compatible key
+MAINTENANCE: remove legacy fallback
+GENERATION 1 survived= True
+{
+  "passed": true,
+  "status": "passed",
+  "commands": [
+    {
+      "command": {
+        "argv": [
+          "pytest"
+        ],
+        "cwd": "."
+      },
+      "passed": true,
+      "returncode": 0,
+      "result": {
+        "ok": true,
+        "result": {
+          "argv": [
+            "pytest"
+          ],
+          "cwd": ".",
+          "returncode": 0,
+          "stdout": "..                                                                       [100%]\n2 passed in 0.01s\n",
+          "stderr": "",
+          "output_truncated": false
+        }
+      }
+    }
+  ]
+}
+GENERATION 2 survived= False
+{
+  "passed": false,
+  "status": "failed",
+  "commands": [
+    {
+      "command": {
+        "argv": [
+          "pytest"
+        ],
+        "cwd": "."
+      },
+      "passed": false,
+      "returncode": 1,
+      "result": {
+        "ok": true,
+        "result": {
+          "argv": [
+            "pytest"
+          ],
+          "cwd": ".",
+          "returncode": 1,
+          "stdout": ".F                                                                       [100%]\n=================================== FAILURES ===================================\n______________________________ test_legacy_config ______________________________\n\n    def test_legacy_config():\n>       assert timeout({'timeout_s': 7}) == 7\nE       AssertionError: assert 15 == 7\nE        +  where 15 = timeout({'timeout_s': 7})\n\ntest_app.py:7: AssertionError\n=========================== short test summary info ============================\nFAILED test_app.py::test_legacy_config - AssertionError: assert 15 == 7\n1 failed, 1 passed in 0.02s\n",
+          "stderr": "",
+          "output_truncated": false
+        }
+      }
+    }
+  ]
+}
+SURVIVAL CURVE: [{"generation": 0, "survival_rate": 1.0}, {"generation": 1, "survival_rate": 1.0}, {"generation": 2, "survival_rate": 0.0}]
+EVIDENCE: artifacts/chronoforge-offline/evidence.json

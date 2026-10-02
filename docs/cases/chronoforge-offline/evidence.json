@@ -1,0 +1,95 @@
+{
+  "mode": "scripted-offline-real-engine",
+  "llm_used": false,
+  "python": "3.12.14",
+  "baseline_exit": 0,
+  "baseline_stdout": "..                                                                       [100%]\n2 passed in 0.01s\n",
+  "original_tests_sha256": "7df485c29ee6fcaea0b5cba904f34712bf3a39881afb64bb9ddb1e646f16c6fa",
+  "survival_curve": [
+    {
+      "generation": 0,
+      "survival_rate": 1.0
+    },
+    {
+      "generation": 1,
+      "survival_rate": 1.0
+    },
+    {
+      "generation": 2,
+      "survival_rate": 0.0
+    }
+  ],
+  "generations": [
+    {
+      "generation": 1,
+      "survived": true,
+      "app": "def timeout(config):\n    return config.get('request_timeout', config.get('timeout_s', 15))\n",
+      "tests": "from app import timeout\n\ndef test_default():\n    assert timeout({}) == 15\n\ndef test_legacy_config():\n    assert timeout({'timeout_s': 7}) == 7\n",
+      "verification": {
+        "passed": true,
+        "status": "passed",
+        "commands": [
+          {
+            "command": {
+              "argv": [
+                "pytest"
+              ],
+              "cwd": "."
+            },
+            "passed": true,
+            "returncode": 0,
+            "result": {
+              "ok": true,
+              "result": {
+                "argv": [
+                  "pytest"
+                ],
+                "cwd": ".",
+                "returncode": 0,
+                "stdout": "..                                                                       [100%]\n2 passed in 0.01s\n",
+                "stderr": "",
+                "output_truncated": false
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "generation": 2,
+      "survived": false,
+      "app": "def timeout(config):\n    return config.get('request_timeout', 15)\n",
+      "tests": "from app import timeout\n\ndef test_default():\n    assert timeout({}) == 15\n\ndef test_legacy_config():\n    assert timeout({'timeout_s': 7}) == 7\n",
+      "verification": {
+        "passed": false,
+        "status": "failed",
+        "commands": [
+          {
+            "command": {
+              "argv": [
+                "pytest"
+              ],
+              "cwd": "."
+            },
+            "passed": false,
+            "returncode": 1,
+            "result": {
+              "ok": true,
+              "result": {
+                "argv": [
+                  "pytest"
+                ],
+                "cwd": ".",
+                "returncode": 1,
+                "stdout": ".F                                                                       [100%]\n=================================== FAILURES ===================================\n______________________________ test_legacy_config ______________________________\n\n    def test_legacy_config():\n>       assert timeout({'timeout_s': 7}) == 7\nE       AssertionError: assert 15 == 7\nE        +  where 15 = timeout({'timeout_s': 7})\n\ntest_app.py:7: AssertionError\n=========================== short test summary info ============================\nFAILED test_app.py::test_legacy_config - AssertionError: assert 15 == 7\n1 failed, 1 passed in 0.02s\n",
+                "stderr": "",
+                "output_truncated": false
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "limits": "Scripted fixture verifies orchestration and real test replay, not model intelligence or predictive accuracy."
+}
