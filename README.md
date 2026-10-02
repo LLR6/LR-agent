@@ -1,5 +1,18 @@
 # LR-Agent
 
+## LR-Agent：给 AI 生成的补丁做维护压力测试
+
+**当前测试通过之后，这个补丁经得起依赖升级、接口变化和下一次功能修改吗？**
+
+LR-Agent 是一个 Python 编程 Agent 实验项目。它在隔离工作区生成和验证候选补丁，再让仓库经历连续维护场景，每一步重新检查原有行为，输出可追溯的 Patch Life Report。
+
+- **先看演示：** [流程 GIF](./docs/media/chronoforge-showcase.gif)（确定性流程展示，不是实测成绩）。
+- **动手试用：** [安装与最小示例](./docs/DEMO_CHRONOFORGE.md)，完整实验需要配置兼容模型接口，可能产生模型调用费用。
+- **适合谁：** 编程 Agent 开发者、软件测试与维护研究者，以及想复核 AI 补丁的开发者。
+- **当前边界：** 研究原型；合成维护场景不等于现实预测，尚不能据此宣称优于其他 Agent。
+- **欢迎反馈：** [提交使用问题或最小反例](https://github.com/LLR6/LR-agent/issues/new)，请附模型、运行命令和验证结果，移除密钥。
+
+
 <!-- LR-LAB-CHROME:START -->
 <p align="center">
   <a href="https://github.com/LLR6"><img alt="LR Lab" src="https://img.shields.io/badge/LR_LAB-0x4C52-0D1117?style=for-the-badge&logo=github&logoColor=white"></a>
