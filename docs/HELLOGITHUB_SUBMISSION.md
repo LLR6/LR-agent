@@ -1,6 +1,8 @@
 # HelloGitHub 项目自荐稿
 
-状态：2026-10-02 已准备；GitHub 插件向外部仓库提交时返回 403，尚未发布。
+状态：2026-10-02 已通过 GitHub 网页提交，等待审核。
+
+公开投稿：https://github.com/521xueweihan/HelloGitHub/issues/3826
 
 投稿标题：[开源推荐] LR-Agent：给 AI 编程补丁做连续维护压力测试
 
